@@ -7,9 +7,6 @@
     "regions": [
         "iad1"
     ],
-    "env": {
-        "DEMO_MODE": "true"
-    },
     "headers": [
         {
             "source": "/(.*)",
