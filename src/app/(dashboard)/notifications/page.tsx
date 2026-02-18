@@ -1,8 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, Button, Skeleton } from '@/components/ui';
+import { useRealtime } from '@/hooks/useRealtime';
+import toast from 'react-hot-toast';
 
 interface Notification {
     id: string;
@@ -14,76 +18,160 @@ interface Notification {
     icon?: string;
 }
 
-// Mock notifications for demo
-const mockNotifications: Notification[] = [
-    {
-        id: '1',
-        type: 'deposit',
-        title: 'Deposit Received',
-        message: 'You received ₦10,000 from John Doe',
-        timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-        read: false,
-        icon: '💰',
-    },
-    {
-        id: '2',
-        type: 'refill',
-        title: 'Medication Refill Due',
-        message: 'Insulin refill countdown reached 0 days. ₦15,000 will be deducted.',
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-        read: false,
-        icon: '💊',
-    },
-    {
-        id: '3',
-        type: 'deduction',
-        title: 'Auto-Deduction Complete',
-        message: '₦15,000 was deducted for Insulin refill',
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-        read: true,
-        icon: '✅',
-    },
-    {
-        id: '4',
-        type: 'connection',
-        title: 'New Connection',
-        message: 'Jane Doe accepted your connection request',
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-        read: true,
-        icon: '🤝',
-    },
-    {
-        id: '5',
-        type: 'system',
-        title: 'Welcome to VitaVault!',
-        message: 'Your account has been created successfully. Start by adding connections.',
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
-        read: true,
-        icon: '🎉',
-    },
-];
+// Get icon based on notification type
+const getNotificationIcon = (type: string): string => {
+    switch (type) {
+        case 'deposit': return '💰';
+        case 'deduction': return '💸';
+        case 'refill': return '💊';
+        case 'connection': return '🤝';
+        case 'system': return '🔔';
+        default: return '📢';
+    }
+};
 
 export default function NotificationsPage() {
+    const router = useRouter();
+    const { data: session } = useSession();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-    useEffect(() => {
-        // Simulate API fetch
-        setTimeout(() => {
-            setNotifications(mockNotifications);
-            setLoading(false);
-        }, 500);
+    // Handle incoming real-time notifications
+    const handleNotification = useCallback((data: { id: string; type: string; title: string; message: string; timestamp: string }) => {
+        const newNotification: Notification = {
+            id: data.id || `notif_${Date.now()}`,
+            type: data.type as Notification['type'],
+            title: data.title,
+            message: data.message,
+            timestamp: data.timestamp,
+            read: false,
+            icon: getNotificationIcon(data.type),
+        };
+
+        // Add to the top of the list
+        setNotifications((prev) => [newNotification, ...prev]);
+
+        // Show toast for new notification
+        toast(data.message, {
+            icon: getNotificationIcon(data.type),
+            duration: 4000,
+        });
     }, []);
 
-    const markAsRead = (id: string) => {
+    // Handle balance updates as notifications
+    const handleBalanceUpdate = useCallback((data: { type: 'deposit' | 'deduction'; amount: number; newBalance: number; timestamp: string }) => {
+        const title = data.type === 'deposit' ? 'Deposit Received' : 'Auto-Deduction';
+        const message = data.type === 'deposit'
+            ? `₦${data.amount.toLocaleString()} was deposited to your wallet`
+            : `₦${data.amount.toLocaleString()} was deducted from your wallet`;
+
+        const newNotification: Notification = {
+            id: `balance_${Date.now()}`,
+            type: data.type,
+            title,
+            message,
+            timestamp: data.timestamp,
+            read: false,
+            icon: data.type === 'deposit' ? '💰' : '💸',
+        };
+
+        setNotifications((prev) => [newNotification, ...prev]);
+
+        toast(message, {
+            icon: data.type === 'deposit' ? '💰' : '💸',
+            duration: 4000,
+        });
+    }, []);
+
+    // Handle refill alerts
+    const handleRefillAlert = useCallback((data: { medicationName: string; daysRemaining: number; timestamp: string }) => {
+        const newNotification: Notification = {
+            id: `refill_${Date.now()}`,
+            type: 'refill',
+            title: 'Medication Refill Alert',
+            message: `${data.medicationName} has ${data.daysRemaining} days remaining`,
+            timestamp: data.timestamp,
+            read: false,
+            icon: '💊',
+        };
+
+        setNotifications((prev) => [newNotification, ...prev]);
+
+        toast(`${data.medicationName} needs attention!`, {
+            icon: '💊',
+            duration: 4000,
+        });
+    }, []);
+
+    // Connect to SSE for real-time updates
+    const { isConnected, connectionError } = useRealtime({
+        userId: session?.user?.id || '',
+        onNotification: handleNotification,
+        onBalanceUpdate: handleBalanceUpdate,
+        onRefillAlert: handleRefillAlert,
+        onConnect: () => console.log('Connected to real-time notifications'),
+        onDisconnect: () => console.log('Disconnected from real-time notifications'),
+    });
+
+    useEffect(() => {
+        const fetchNotifications = async () => {
+            try {
+                const res = await fetch('/api/notifications');
+                if (res.ok) {
+                    const data = await res.json();
+                    // map DB notification to UI interface
+                    const formatted = data.notifications.map((n: any) => ({
+                        id: n._id,
+                        type: n.type,
+                        title: n.title,
+                        message: n.message,
+                        timestamp: n.createdAt,
+                        read: n.read,
+                        icon: getNotificationIcon(n.type),
+                    }));
+                    setNotifications(formatted);
+                }
+            } catch (error) {
+                console.error('Failed to fetch notifications:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchNotifications();
+    }, []);
+
+    const markAsRead = async (id: string) => {
+        // Optimistic update
         setNotifications((prev) =>
             prev.map((n) => (n.id === id ? { ...n, read: true } : n))
         );
+
+        try {
+            await fetch('/api/notifications', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ notificationIds: [id] }),
+            });
+        } catch (error) {
+            console.error('Failed to mark as read:', error);
+        }
     };
 
-    const markAllAsRead = () => {
+    const markAllAsRead = async () => {
+        // Optimistic update
         setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+
+        try {
+            await fetch('/api/notifications', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ markAll: true }),
+            });
+        } catch (error) {
+            console.error('Failed to mark all as read:', error);
+        }
     };
 
     const getTypeColor = (type: string) => {
@@ -137,6 +225,20 @@ export default function NotificationsPage() {
     return (
         <div className="min-h-screen bg-neutral-light p-6">
             <div className="max-w-2xl mx-auto">
+                {/* Connection Error Banner */}
+                {connectionError && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-amber-700"
+                    >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <span className="text-sm">{connectionError}</span>
+                    </motion.div>
+                )}
+
                 {/* Header */}
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}
@@ -144,7 +246,25 @@ export default function NotificationsPage() {
                     className="flex items-center justify-between mb-6"
                 >
                     <div>
-                        <h1 className="text-3xl font-bold text-neutral-dark">Notifications</h1>
+                        <button
+                            onClick={() => router.back()}
+                            className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-2 transition-colors"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                            Back
+                        </button>
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-3xl font-bold text-neutral-dark">Notifications</h1>
+                            {/* Real-time connection indicator */}
+                            <div className="flex items-center gap-1" title={isConnected ? 'Live updates active' : 'Connecting...'}>
+                                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+                                <span className="text-xs text-gray-400">
+                                    {isConnected ? 'Live' : 'Offline'}
+                                </span>
+                            </div>
+                        </div>
                         <p className="text-gray-500">
                             {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up!'}
                         </p>
@@ -168,8 +288,8 @@ export default function NotificationsPage() {
                             key={f}
                             onClick={() => setFilter(f)}
                             className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${filter === f
-                                    ? 'bg-primary text-white'
-                                    : 'bg-white text-gray-600 hover:bg-gray-100'
+                                ? 'bg-primary text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-100'
                                 }`}
                         >
                             {f === 'all' ? 'All' : `Unread (${unreadCount})`}

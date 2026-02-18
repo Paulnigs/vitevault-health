@@ -333,3 +333,26 @@ textarea:focus-visible {
   white-space: nowrap;
   border: 0;
 }
+
+/* Custom Animations */
+@keyframes gradient-x {
+
+  0%,
+  100% {
+    background-size: 200% 200%;
+    background-position: left center;
+  }
+
+  50% {
+    background-size: 200% 200%;
+    background-position: right center;
+  }
+}
+
+.animate-gradient-x {
+  animation: gradient-x 3s ease infinite;
+}
+
+.mask-image-gradient {
+  mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+}

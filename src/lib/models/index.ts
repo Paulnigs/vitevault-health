@@ -6,3 +6,6 @@ export type { IWallet, ITransaction, TransactionType, ScheduleType } from './Wal
 
 export { default as Medication } from './Medication';
 export type { IMedication } from './Medication';
+
+export { default as Notification } from './Notification';
+export type { INotification, NotificationType } from './Notification';

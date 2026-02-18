@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db';
-import { Medication, Wallet } from '@/lib/models';
+import { Medication, Wallet, Notification } from '@/lib/models';
 
 export async function POST(request: NextRequest) {
     try {
@@ -87,6 +87,20 @@ export async function POST(request: NextRequest) {
 
             deductionMade = true;
             newBalance = wallet.balance;
+
+            // Create notification
+            await Notification.create({
+                userId: wallet.owner,
+                type: 'deduction',
+                title: 'Auto-Refill Processed',
+                message: `₦${medication.refillCost.toLocaleString()} was deducted for ${medication.name} refill.`,
+                read: false,
+                data: {
+                    medicationId: medication._id,
+                    amount: medication.refillCost,
+                    walletId: wallet._id
+                }
+            });
         }
 
         await medication.save();

@@ -60,9 +60,11 @@ export default function LoginPage() {
 
             toast.success('Welcome back!');
 
-            // Redirect based on role will be handled by middleware
-            // For now, redirect to a generic dashboard
-            router.push('/dashboard/child');
+            // Fetch the updated session to get the user's role
+            const session = await fetch('/api/auth/session').then(res => res.json());
+            const role = session?.user?.role || 'child';
+
+            router.push(`/dashboard/${role}`);
             router.refresh();
         } catch (error) {
             toast.error(error instanceof Error ? error.message : 'Login failed');
@@ -152,14 +154,14 @@ export default function LoginPage() {
                         </form>
 
                         {/* Demo accounts info */}
-                        <div className="mt-6 p-4 bg-[#F8F9FA] rounded-lg">
+                        {/* <div className="mt-6 p-4 bg-[#F8F9FA] rounded-lg">
                             <p className="text-xs text-[#6C757D] text-center mb-2">
                                 Demo Mode: Create an account or use test credentials
                             </p>
                             <div className="text-xs text-center text-[#6C757D]">
                                 <p>Test cards: 4111 1111 1111 1111 (Visa)</p>
                             </div>
-                        </div>
+                        </div> */}
 
                         <p className="text-center text-[#6C757D] mt-6">
                             Don&apos;t have an account?{' '}

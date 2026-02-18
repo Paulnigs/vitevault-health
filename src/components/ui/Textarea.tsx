@@ -1,89 +1,73 @@
 'use client';
 
-import { forwardRef, InputHTMLAttributes, ReactNode, useId } from 'react';
+import { forwardRef, TextareaHTMLAttributes, useId } from 'react';
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
     label?: string;
     error?: string;
     helperText?: string;
-    leftIcon?: ReactNode;
-    rightIcon?: ReactNode;
 }
 
-const Input = forwardRef<HTMLInputElement, InputProps>(
+const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     (
         {
             label,
             error,
             helperText,
-            leftIcon,
-            rightIcon,
             className = '',
             id,
+            rows = 4,
             ...props
         },
         ref
     ) => {
         const generatedId = useId();
-        const inputId = id || generatedId;
+        const textareaId = id || generatedId;
 
         return (
             <div className="w-full">
                 {label && (
                     <label
-                        htmlFor={inputId}
-                        className="block text-sm font-medium text-[#343A40] mb-1.5"
+                        htmlFor={textareaId}
+                        className="block text-sm font-medium text-slate-700 mb-1.5"
                     >
                         {label}
                     </label>
                 )}
 
                 <div className="relative">
-                    {leftIcon && (
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6C757D]">
-                            {leftIcon}
-                        </div>
-                    )}
-
-                    <input
+                    <textarea
                         ref={ref}
-                        id={inputId}
+                        id={textareaId}
+                        rows={rows}
                         aria-invalid={!!error}
                         aria-describedby={
                             error
-                                ? `${inputId}-error`
+                                ? `${textareaId}-error`
                                 : helperText
-                                    ? `${inputId}-helper`
+                                    ? `${textareaId}-helper`
                                     : undefined
                         }
                         className={`
-              w-full px-4 py-3 rounded-lg border-2 text-[#343A40]
+              w-full px-4 py-3 rounded-lg border-2 text-slate-900
               bg-white transition-all duration-150 ease-in-out
-              placeholder:text-[#6C757D]/60
-              focus:outline-none focus:ring-2 focus:ring-offset-0
-              ${leftIcon ? 'pl-10' : ''}
-              ${rightIcon ? 'pr-10' : ''}
+              placeholder:text-slate-400
+              focus:outline-none focus:ring-2 focus:ring-offset-0 resize-y
               ${error
-                                ? 'border-[#DC3545] focus:border-[#DC3545] focus:ring-[#DC3545]/30'
-                                : 'border-gray-200 focus:border-[#007BFF] focus:ring-[#007BFF]/30'
+                                ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
+                                : 'border-slate-200 focus:border-sky-500 focus:ring-sky-500/30'
                             }
-              disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60
+              disabled:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60
               ${className}
             `}
                         {...props}
                     />
-
-                    {rightIcon && (
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6C757D]">
-                            {rightIcon}
-                        </div>
-                    )}
                 </div>
 
                 {error && (
                     <p
-                        id={`${inputId}-error`}
-                        className="mt-1.5 text-sm text-[#DC3545] flex items-center gap-1"
+                        id={`${textareaId}-error`}
+                        className="mt-1.5 text-sm text-red-500 flex items-center gap-1"
                         role="alert"
                     >
                         <svg
@@ -103,7 +87,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
                 )}
 
                 {helperText && !error && (
-                    <p id={`${inputId}-helper`} className="mt-1.5 text-sm text-[#6C757D]">
+                    <p id={`${textareaId}-helper`} className="mt-1.5 text-sm text-slate-500">
                         {helperText}
                     </p>
                 )}
@@ -112,6 +96,6 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
     }
 );
 
-Input.displayName = 'Input';
+Textarea.displayName = 'Textarea';
 
-export default Input;
+export default Textarea;

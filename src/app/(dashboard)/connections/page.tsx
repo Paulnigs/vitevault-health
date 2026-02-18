@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, Button, Input, Modal, Skeleton } from '@/components/ui';
@@ -11,25 +12,26 @@ interface LinkedUser {
     name: string;
     email: string;
     role: 'child' | 'parent' | 'pharmacy';
-    linkedAt?: string;
 }
 
 export default function ConnectionsPage() {
+    const router = useRouter();
     const { data: session } = useSession();
     const [linkedUsers, setLinkedUsers] = useState<LinkedUser[]>([]);
+    const [userLinkCode, setUserLinkCode] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const [showLinkModal, setShowLinkModal] = useState(false);
-    const [searchEmail, setSearchEmail] = useState('');
-    const [searchResult, setSearchResult] = useState<LinkedUser | null>(null);
-    const [searching, setSearching] = useState(false);
+    const [linkCodeInput, setLinkCodeInput] = useState('');
     const [linking, setLinking] = useState(false);
+    const [copied, setCopied] = useState(false);
 
     const fetchConnections = async () => {
         try {
             const res = await fetch('/api/link');
             if (res.ok) {
                 const data = await res.json();
-                setLinkedUsers(data.linkedUsers || []);
+                setLinkedUsers(data.links || []);
+                setUserLinkCode(data.linkCode || '');
             }
         } catch (error) {
             console.error('Failed to fetch connections:', error);
@@ -42,34 +44,12 @@ export default function ConnectionsPage() {
         fetchConnections();
     }, []);
 
-    const handleSearch = async (e: React.FormEvent) => {
+    const handleLink = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!searchEmail.trim()) return;
-
-        setSearching(true);
-        setSearchResult(null);
-
-        try {
-            const res = await fetch(`/api/link?search=${encodeURIComponent(searchEmail)}`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data.user) {
-                    setSearchResult(data.user);
-                } else {
-                    showError('User not found');
-                }
-            } else {
-                showError('Failed to search');
-            }
-        } catch {
-            showError('Network error');
-        } finally {
-            setSearching(false);
+        if (!linkCodeInput.trim()) {
+            showError('Please enter a link code');
+            return;
         }
-    };
-
-    const handleLink = async () => {
-        if (!searchResult) return;
 
         setLinking(true);
 
@@ -77,23 +57,34 @@ export default function ConnectionsPage() {
             const res = await fetch('/api/link', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetUserId: searchResult._id }),
+                body: JSON.stringify({ linkCode: linkCodeInput.toUpperCase() }),
             });
 
+            const data = await res.json();
+
             if (res.ok) {
-                showSuccess(`Connected with ${searchResult.name || searchResult.email}!`);
+                showSuccess(`Connected with ${data.linkedUser?.name || 'user'}!`);
                 setShowLinkModal(false);
-                setSearchEmail('');
-                setSearchResult(null);
+                setLinkCodeInput('');
                 fetchConnections();
             } else {
-                const data = await res.json();
                 showError(data.error || 'Failed to connect');
             }
         } catch {
             showError('Network error');
         } finally {
             setLinking(false);
+        }
+    };
+
+    const copyLinkCode = async () => {
+        try {
+            await navigator.clipboard.writeText(userLinkCode);
+            setCopied(true);
+            showSuccess('Link code copied!');
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            showError('Failed to copy');
         }
     };
 
@@ -148,6 +139,15 @@ export default function ConnectionsPage() {
                     className="flex items-center justify-between mb-8"
                 >
                     <div>
+                        <button
+                            onClick={() => router.back()}
+                            className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-2 transition-colors"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                            Back
+                        </button>
                         <h1 className="text-3xl font-bold text-neutral-dark">Connections</h1>
                         <p className="text-gray-500">Manage your family and pharmacy connections</p>
                     </div>
@@ -157,6 +157,32 @@ export default function ConnectionsPage() {
                         </svg>
                         Add Connection
                     </Button>
+                </motion.div>
+
+                {/* Your Link Code Card */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-8"
+                >
+                    <Card className="p-6 bg-gradient-to-r from-[#007BFF] to-[#28A745] text-white">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                            <div>
+                                <p className="text-white/80 text-sm mb-1">Your Link Code</p>
+                                <p className="text-3xl font-mono font-bold tracking-wider">{userLinkCode}</p>
+                                <p className="text-white/70 text-sm mt-2">
+                                    Share this code with family members or your pharmacy to connect
+                                </p>
+                            </div>
+                            <Button
+                                variant="outline"
+                                className="bg-white/20 border-white/30 text-white hover:bg-white/30"
+                                onClick={copyLinkCode}
+                            >
+                                {copied ? '✓ Copied!' : '📋 Copy Code'}
+                            </Button>
+                        </div>
+                    </Card>
                 </motion.div>
 
                 {/* Family Tree Visualization */}
@@ -276,66 +302,52 @@ export default function ConnectionsPage() {
                     isOpen={showLinkModal}
                     onClose={() => {
                         setShowLinkModal(false);
-                        setSearchEmail('');
-                        setSearchResult(null);
+                        setLinkCodeInput('');
                     }}
                     title="Add Connection"
                 >
-                    <form onSubmit={handleSearch} className="space-y-4">
+                    <form onSubmit={handleLink} className="space-y-4">
+                        <div className="text-center mb-4">
+                            <p className="text-gray-500 text-sm">
+                                Enter the link code shared by the person you want to connect with
+                            </p>
+                        </div>
+
                         <Input
-                            label="Search by Email"
-                            type="email"
-                            placeholder="Enter email address"
-                            value={searchEmail}
-                            onChange={(e) => setSearchEmail(e.target.value)}
+                            label="Link Code"
+                            type="text"
+                            placeholder="e.g., ABC12345"
+                            value={linkCodeInput}
+                            onChange={(e) => setLinkCodeInput(e.target.value.toUpperCase())}
+                            className="font-mono text-center text-lg tracking-wider"
+                            maxLength={10}
                             required
                         />
 
                         <Button
                             type="submit"
-                            variant="outline"
+                            variant="primary"
                             className="w-full"
-                            disabled={searching}
+                            disabled={linking || !linkCodeInput.trim()}
+                            isLoading={linking}
                         >
-                            {searching ? 'Searching...' : 'Search'}
+                            {linking ? 'Connecting...' : 'Connect'}
                         </Button>
-                    </form>
 
-                    {/* Search Result */}
-                    <AnimatePresence>
-                        {searchResult && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -10 }}
-                                className="mt-6 p-4 border rounded-xl"
-                            >
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-xl font-semibold">
-                                        {searchResult.name?.charAt(0) || searchResult.email.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div className="flex-1">
-                                        <h3 className="font-semibold text-neutral-dark">
-                                            {searchResult.name || 'User'}
-                                        </h3>
-                                        <p className="text-sm text-gray-500">{searchResult.email}</p>
-                                        <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${getRoleColor(searchResult.role)}`}>
-                                            {searchResult.role}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <Button
-                                    variant="primary"
-                                    className="w-full mt-4"
-                                    onClick={handleLink}
-                                    disabled={linking}
+                        <div className="text-center pt-4 border-t">
+                            <p className="text-sm text-gray-500 mb-2">Or share your code:</p>
+                            <div className="flex items-center justify-center gap-2">
+                                <span className="font-mono font-bold text-lg text-[#007BFF]">{userLinkCode}</span>
+                                <button
+                                    type="button"
+                                    onClick={copyLinkCode}
+                                    className="text-gray-400 hover:text-gray-600"
                                 >
-                                    {linking ? 'Connecting...' : 'Connect'}
-                                </Button>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                                    📋
+                                </button>
+                            </div>
+                        </div>
+                    </form>
                 </Modal>
             </div>
         </div>

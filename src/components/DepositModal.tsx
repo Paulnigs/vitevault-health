@@ -22,8 +22,15 @@ export default function DepositModal({ isOpen, onClose, walletId, onSuccess }: D
     const [cvv, setCvv] = useState('');
     const [amount, setAmount] = useState(5000);
     const [schedule, setSchedule] = useState<Schedule>('one-time');
+
     const [isLoading, setIsLoading] = useState(false);
     const [showConfetti, setShowConfetti] = useState(false);
+
+    // Lock State
+    const [isLockEnabled, setIsLockEnabled] = useState(false);
+    const [lockMedicationName, setLockMedicationName] = useState('');
+    const [lockAmount, setLockAmount] = useState(0);
+    const [lockDuration, setLockDuration] = useState(30);
 
     // Format card number with spaces
     const formatCardNumber = (value: string) => {
@@ -56,6 +63,12 @@ export default function DepositModal({ isOpen, onClose, walletId, onSuccess }: D
                     expiry,
                     cvv,
                     schedule,
+                    lockSettings: {
+                        enabled: isLockEnabled,
+                        medicationName: lockMedicationName,
+                        amount: lockAmount,
+                        durationDays: lockDuration
+                    }
                 }),
             });
 
@@ -75,7 +88,12 @@ export default function DepositModal({ isOpen, onClose, walletId, onSuccess }: D
                     setExpiry('');
                     setCvv('');
                     setAmount(5000);
+                    setAmount(5000);
                     setSchedule('one-time');
+                    setIsLockEnabled(false);
+                    setLockMedicationName('');
+                    setLockAmount(0);
+                    setLockDuration(30);
                 }, 2000);
             } else {
                 showError(data.error || 'Deposit failed');
@@ -132,8 +150,8 @@ export default function DepositModal({ isOpen, onClose, walletId, onSuccess }: D
                                 type="button"
                                 onClick={() => setAmount(preset)}
                                 className={`py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${amount === preset
-                                        ? 'bg-primary text-white shadow-lg scale-105'
-                                        : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                                    ? 'bg-primary text-white shadow-lg scale-105'
+                                    : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
                                     }`}
                             >
                                 ₦{preset.toLocaleString()}
@@ -163,7 +181,7 @@ export default function DepositModal({ isOpen, onClose, walletId, onSuccess }: D
                         value={cardNumber}
                         onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
                         required
-                        icon={
+                        leftIcon={
                             <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                             </svg>
@@ -199,8 +217,8 @@ export default function DepositModal({ isOpen, onClose, walletId, onSuccess }: D
                             <label
                                 key={s}
                                 className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${schedule === s
-                                        ? 'border-primary bg-primary/5'
-                                        : 'border-gray-200 hover:border-gray-300'
+                                    ? 'border-primary bg-primary/5'
+                                    : 'border-gray-200 hover:border-gray-300'
                                     }`}
                             >
                                 <input
@@ -223,6 +241,73 @@ export default function DepositModal({ isOpen, onClose, walletId, onSuccess }: D
                             </label>
                         ))}
                     </div>
+                </div>
+
+
+
+                {/* Lock Funds Option */}
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 className="font-semibold text-neutral-dark">Lock Funds?</h3>
+                            <p className="text-xs text-gray-500">Reserve money for specific medication</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={isLockEnabled}
+                                onChange={(e) => {
+                                    setIsLockEnabled(e.target.checked);
+                                    if (e.target.checked) setLockAmount(amount);
+                                }}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                    </div>
+
+                    <AnimatePresence>
+                        {isLockEnabled && (
+                            <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden space-y-3"
+                            >
+                                <Input
+                                    label="Medication Name"
+                                    placeholder="e.g. Insulin"
+                                    value={lockMedicationName}
+                                    onChange={(e) => setLockMedicationName(e.target.value)}
+                                    required={isLockEnabled}
+                                    className="bg-white"
+                                />
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Input
+                                        label="Amount to Lock"
+                                        type="number"
+                                        value={lockAmount}
+                                        onChange={(e) => setLockAmount(Number(e.target.value))}
+                                        max={amount}
+                                        required={isLockEnabled}
+                                        className="bg-white"
+                                    />
+                                    <Input
+                                        label="Duration (Days)"
+                                        type="number"
+                                        value={lockDuration}
+                                        onChange={(e) => setLockDuration(Number(e.target.value))}
+                                        min={1}
+                                        required={isLockEnabled}
+                                        className="bg-white"
+                                    />
+                                </div>
+                                <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                                    ⚠️ Unlocking early incurs a 5% fee. Auto-unlocks in {lockDuration} days.
+                                </p>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
 
                 {/* Submit Button */}
@@ -250,6 +335,6 @@ export default function DepositModal({ isOpen, onClose, walletId, onSuccess }: D
                     Demo mode: Use card starting with &quot;4&quot; for successful deposit
                 </p>
             </form>
-        </Modal>
+        </Modal >
     );
 }

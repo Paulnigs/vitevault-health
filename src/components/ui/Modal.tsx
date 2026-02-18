@@ -22,32 +22,29 @@ export default function Modal({
 }: ModalProps) {
     const modalRef = useRef<HTMLDivElement>(null);
     const previousActiveElement = useRef<HTMLElement | null>(null);
+    const onCloseRef = useRef(onClose);
 
-    const sizes = {
-        sm: 'max-w-sm',
-        md: 'max-w-md',
-        lg: 'max-w-lg',
-        xl: 'max-w-xl',
-    };
+    // Keep ref up-to-date without triggering effects
+    onCloseRef.current = onClose;
 
-    // Handle ESC key
+    // Handle ESC key — stable callback using ref
     const handleKeyDown = useCallback(
         (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
-                onClose();
+                onCloseRef.current();
             }
         },
-        [onClose]
+        [] // stable — never changes
     );
 
-    // Focus trap and accessibility
+    // Manage listeners and body scroll
     useEffect(() => {
         if (isOpen) {
             previousActiveElement.current = document.activeElement as HTMLElement;
             document.addEventListener('keydown', handleKeyDown);
             document.body.style.overflow = 'hidden';
 
-            // Focus the modal
+            // Focus the modal ONLY on initial open
             setTimeout(() => {
                 modalRef.current?.focus();
             }, 0);
@@ -63,6 +60,13 @@ export default function Modal({
             }
         };
     }, [isOpen, handleKeyDown]);
+
+    const sizes = {
+        sm: 'max-w-sm',
+        md: 'max-w-md',
+        lg: 'max-w-lg',
+        xl: 'max-w-xl',
+    };
 
     return (
         <AnimatePresence>

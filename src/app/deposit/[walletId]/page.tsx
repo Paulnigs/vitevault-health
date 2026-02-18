@@ -200,8 +200,8 @@ export default function DepositPage() {
                                             type="button"
                                             onClick={() => setAmount(preset)}
                                             className={`py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-200 ${amount === preset
-                                                    ? 'bg-primary text-white shadow-lg scale-105'
-                                                    : 'bg-amber-100 text-amber-800 hover:bg-amber-200 hover:scale-102'
+                                                ? 'bg-primary text-white shadow-lg scale-105'
+                                                : 'bg-amber-100 text-amber-800 hover:bg-amber-200 hover:scale-102'
                                                 }`}
                                         >
                                             ₦{preset.toLocaleString()}
@@ -301,8 +301,8 @@ export default function DepositPage() {
                                         <label
                                             key={s.value}
                                             className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${schedule === s.value
-                                                    ? 'border-primary bg-primary/5'
-                                                    : 'border-gray-200 hover:border-gray-300'
+                                                ? 'border-primary bg-primary/5'
+                                                : 'border-gray-200 hover:border-gray-300'
                                                 }`}
                                         >
                                             <input
@@ -342,7 +342,7 @@ export default function DepositPage() {
 
                             {/* Demo Notice */}
                             <p className="text-xs text-center text-gray-500">
-                                🔒 Demo mode: Use any card number starting with &quot;4&quot; for successful deposit
+                                🔒 Test mode: Use any card number starting with &quot;4&quot; for successful deposit
                             </p>
                         </form>
                     </Card>

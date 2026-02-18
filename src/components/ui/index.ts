@@ -6,3 +6,4 @@ export { default as CountdownTimer } from './CountdownTimer';
 export { default as Input } from './Input';
 export { default as Select } from './Select';
 export { default as Skeleton, SkeletonText, SkeletonCard, SkeletonAvatar } from './Skeleton';
+export { default as Textarea } from './Textarea';

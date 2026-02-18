@@ -1,9 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Card, Button, Skeleton } from '@/components/ui';
+import { useRealtime } from '@/hooks/useRealtime';
+import toast from 'react-hot-toast';
+import { AnimatePresence } from 'framer-motion';
+import LockFundsModal from '@/components/LockFundsModal';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -37,39 +41,62 @@ interface Transaction {
     schedule?: string;
 }
 
+interface LockedFund {
+    _id: string;
+    medicationName: string;
+    amount: number;
+    lockedAt: string;
+    unlocksAt: string;
+    isActive: boolean;
+}
+
 interface Wallet {
     id: string;
     balance: number;
     owner: string;
     transactions: Transaction[];
+    lockedFunds: LockedFund[];
+    availableBalance: number;
 }
 
 export default function WalletPage() {
     const params = useParams();
+    const router = useRouter();
     const walletId = params.id as string;
     const [wallet, setWallet] = useState<Wallet | null>(null);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'deposit' | 'deduction'>('all');
+    const [showLockModal, setShowLockModal] = useState(false);
+
+
+    const fetchWallet = useCallback(async () => {
+        try {
+            const res = await fetch(`/api/wallet/${walletId}`);
+            if (res.ok) {
+                const data = await res.json();
+                setWallet(data.wallet);
+            }
+        } catch (error) {
+            console.error('Failed to fetch wallet:', error);
+        } finally {
+            setLoading(false);
+        }
+    }, [walletId]);
 
     useEffect(() => {
-        const fetchWallet = async () => {
-            try {
-                const res = await fetch(`/api/wallet/${walletId}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setWallet(data.wallet);
-                }
-            } catch (error) {
-                console.error('Failed to fetch wallet:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
         if (walletId) {
             fetchWallet();
         }
-    }, [walletId]);
+    }, [walletId, fetchWallet]);
+
+    // Setup real-time updates
+    useRealtime({
+        userId: wallet?.owner || '',
+        onBalanceUpdate: () => {
+            fetchWallet();
+            toast.success('Wallet balance updated!', { icon: '💰' });
+        }
+    });
 
     const filteredTransactions = wallet?.transactions.filter((t) =>
         filter === 'all' ? true : t.type === filter
@@ -104,16 +131,16 @@ export default function WalletPage() {
         ],
     };
 
-    const chartOptions = {
+    const chartOptions: any = {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                position: 'top' as const,
+                position: 'top',
             },
             tooltip: {
                 callbacks: {
-                    label: (context: { dataset: { label?: string }; parsed: { y: number } }) => {
+                    label: (context: any) => {
                         return `${context.dataset.label}: ₦${context.parsed.y.toLocaleString()}`;
                     },
                 },
@@ -123,7 +150,7 @@ export default function WalletPage() {
             y: {
                 beginAtZero: true,
                 ticks: {
-                    callback: (value: number | string) => `₦${Number(value).toLocaleString()}`,
+                    callback: (value: any) => `₦${Number(value).toLocaleString()}`,
                 },
             },
         },
@@ -155,32 +182,111 @@ export default function WalletPage() {
     return (
         <div className="min-h-screen bg-neutral-light p-6">
             <div className="max-w-4xl mx-auto space-y-6">
+                <button
+                    onClick={() => router.back()}
+                    className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-2 transition-colors"
+                >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                </button>
                 {/* Balance Card */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                 >
-                    <Card className="p-6 bg-gradient-to-r from-primary to-secondary text-white">
-                        <p className="text-sm opacity-80 mb-1">Current Balance</p>
-                        <h1 className="text-4xl font-bold mb-4">
-                            ₦{wallet.balance.toLocaleString()}
-                        </h1>
-                        <div className="flex gap-3">
-                            <Button
-                                variant="secondary"
-                                className="bg-white/20 hover:bg-white/30 text-white border-white/30"
-                            >
-                                + Deposit
-                            </Button>
-                            <Button
-                                variant="outline"
-                                className="border-white/30 text-white hover:bg-white/10"
-                            >
-                                History
-                            </Button>
-                        </div>
-                    </Card>
+                    <div className="grid md:grid-cols-2 gap-4">
+                        <Card className="p-6 bg-gradient-to-r from-primary to-secondary text-white relative overflow-hidden">
+                            <div className="relative z-10">
+                                <p className="text-sm opacity-80 mb-1">Available Balance</p>
+                                <h1 className="text-4xl font-bold mb-2">
+                                    ₦{(wallet.availableBalance || wallet.balance).toLocaleString()}
+                                </h1>
+                                <p className="text-xs opacity-70 mb-4">
+                                    Total Balance: ₦{wallet.balance.toLocaleString()}
+                                </p>
+                                <div className="flex gap-3">
+                                    <Button
+                                        variant="secondary"
+                                        className="bg-white/20 hover:bg-white/30 text-white border-white/30"
+                                        onClick={() => setShowLockModal(true)}
+                                    >
+                                        🔒 Lock Funds
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        className="border-white/30 text-white hover:bg-white/10"
+                                    >
+                                        History
+                                    </Button>
+                                </div>
+                            </div>
+                            <div className="absolute right-0 top-0 h-full w-1/3 bg-white/5 skew-x-12 transform translate-x-8" />
+                        </Card>
+
+                        {/* Locked Funds Summary */}
+                        <Card className="p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-semibold text-neutral-dark">Locked Funds</h3>
+                                <span className="bg-amber-100 text-amber-800 text-xs px-2 py-1 rounded-full">
+                                    {wallet.lockedFunds?.filter(l => l.isActive).length || 0} Active
+                                </span>
+                            </div>
+
+                            <div className="space-y-3 max-h-40 overflow-y-auto">
+                                {wallet.lockedFunds?.filter(l => l.isActive).length === 0 ? (
+                                    <p className="text-sm text-gray-500 text-center py-4">No locked funds</p>
+                                ) : (
+                                    wallet.lockedFunds?.filter(l => l.isActive).map(lock => (
+                                        <div key={lock._id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                            <div>
+                                                <p className="font-medium text-sm">{lock.medicationName}</p>
+                                                <p className="text-xs text-gray-500">
+                                                    Unlocks: {new Date(lock.unlocksAt).toLocaleDateString()}
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="font-bold text-neutral-dark">₦{lock.amount.toLocaleString()}</p>
+                                                <button
+                                                    onClick={async () => {
+                                                        if (confirm(`⚠️ Emergency Unlock for ${lock.medicationName} incurs a 5% fee (₦${(lock.amount * 0.05).toLocaleString()}). Proceed?`)) {
+                                                            try {
+                                                                const res = await fetch(`/api/wallet/${walletId}/lock`, {
+                                                                    method: 'POST',
+                                                                    body: JSON.stringify({ action: 'emergency_unlock', lockId: lock._id })
+                                                                });
+                                                                if (res.ok) {
+                                                                    toast.success('Unlocked successfully');
+                                                                    fetchWallet();
+                                                                } else {
+                                                                    toast.error('Failed to unlock');
+                                                                }
+                                                            } catch (e) {
+                                                                toast.error('Network error');
+                                                            }
+                                                        }
+                                                    }}
+                                                    className="text-xs text-red-500 hover:text-red-700 underline mt-1"
+                                                >
+                                                    Emergency Unlock
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </Card>
+                    </div>
                 </motion.div>
+
+                <LockFundsModal
+                    isOpen={showLockModal}
+                    onClose={() => setShowLockModal(false)}
+                    walletId={walletId}
+                    availableBalance={wallet.availableBalance || 0}
+                    onSuccess={fetchWallet}
+                />
 
                 {/* Chart */}
                 <motion.div
@@ -215,8 +321,8 @@ export default function WalletPage() {
                                         key={f}
                                         onClick={() => setFilter(f)}
                                         className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${filter === f
-                                                ? 'bg-primary text-white'
-                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            ? 'bg-primary text-white'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                             }`}
                                     >
                                         {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -239,8 +345,8 @@ export default function WalletPage() {
                                         <div className="flex items-center gap-4">
                                             <div
                                                 className={`w-10 h-10 rounded-full flex items-center justify-center ${transaction.type === 'deposit'
-                                                        ? 'bg-green-100 text-green-600'
-                                                        : 'bg-red-100 text-red-600'
+                                                    ? 'bg-green-100 text-green-600'
+                                                    : 'bg-red-100 text-red-600'
                                                     }`}
                                             >
                                                 {transaction.type === 'deposit' ? (

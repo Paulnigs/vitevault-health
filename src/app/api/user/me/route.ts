@@ -35,6 +35,7 @@ export async function GET() {
                 links: user.links || [],
                 walletId: user.walletId?.toString(),
                 createdAt: user.createdAt,
+                notifications: user.notifications,
             },
         });
     } catch (error) {
@@ -64,7 +65,7 @@ export async function PATCH(request: Request) {
 
         const updateData: Record<string, unknown> = {};
         if (name) updateData.name = name;
-        if (notificationPrefs) updateData.notificationPrefs = notificationPrefs;
+        if (notificationPrefs) updateData.notifications = notificationPrefs;
 
         const user = await User.findOneAndUpdate(
             { email: session.user.email },
@@ -87,6 +88,7 @@ export async function PATCH(request: Request) {
                 role: user.role,
                 links: user.links || [],
                 walletId: user.walletId?.toString(),
+                notifications: user.notifications,
             },
         });
     } catch (error) {

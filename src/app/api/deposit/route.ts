@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db';
-import { Wallet } from '@/lib/models';
+import { Wallet, Notification } from '@/lib/models';
 import { validateCard } from '@/lib/cardValidation';
 import type { ScheduleType } from '@/lib/models/Wallet';
 import mongoose from 'mongoose';
@@ -19,7 +19,22 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { walletId, amount, cardDetails, schedule = 'one-time' } = body;
+        const {
+            walletId,
+            amount,
+            cardNumber, // direct fields from frontend
+            expiry,
+            cvv,
+            schedule = 'one-time',
+            lockSettings // { enabled, medicationName, amount, durationDays }
+        } = body;
+
+        // Map fields to cardDetails expectation
+        const cardDetails = {
+            number: cardNumber || body.cardDetails?.number,
+            expiry: expiry || body.cardDetails?.expiry,
+            cvv: cvv || body.cardDetails?.cvv
+        };
 
         // Validation
         if (!walletId || !amount || !cardDetails) {
@@ -88,7 +103,41 @@ export async function POST(request: NextRequest) {
             });
         }
 
+        // Handle Locked Funds
+        if (lockSettings?.enabled && lockSettings.medicationName && lockSettings.amount) {
+            const lockAmount = Number(lockSettings.amount);
+            const duration = Number(lockSettings.durationDays) || 30;
+
+            if (lockAmount > 0 && lockAmount <= wallet.balance) {
+                const unlockDate = new Date();
+                unlockDate.setDate(unlockDate.getDate() + duration);
+
+                wallet.lockedFunds.push({
+                    _id: new mongoose.Types.ObjectId(),
+                    medicationName: lockSettings.medicationName,
+                    amount: lockAmount,
+                    lockedAt: new Date(),
+                    unlocksAt: unlockDate,
+                    isActive: true,
+                });
+            }
+        }
+
         await wallet.save();
+
+        // Create notification for wallet owner
+        await Notification.create({
+            userId: wallet.owner,
+            type: 'deposit',
+            title: 'Deposit Received',
+            message: `₦${amount.toLocaleString()} was deposited to your wallet via ${cardValidation.cardType || 'Card'}.`,
+            read: false,
+            data: {
+                walletId: wallet._id,
+                amount,
+                fromUserId: session.user.id
+            }
+        });
 
         return NextResponse.json(
             {

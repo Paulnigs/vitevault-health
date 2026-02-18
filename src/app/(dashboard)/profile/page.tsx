@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { motion } from 'framer-motion';
 import { Card, Button, Input, Skeleton } from '@/components/ui';
@@ -22,6 +23,7 @@ interface NotificationPrefs {
 }
 
 export default function ProfilePage() {
+    const router = useRouter();
     const { data: session } = useSession();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
@@ -46,6 +48,9 @@ export default function ProfilePage() {
                     const data = await res.json();
                     setProfile(data.user);
                     setFormData({ name: data.user.name || '' });
+                    if (data.user.notifications) {
+                        setNotificationPrefs(data.user.notifications);
+                    }
                 }
             } catch (error) {
                 console.error('Failed to fetch profile:', error);
@@ -142,6 +147,15 @@ export default function ProfilePage() {
                     animate={{ opacity: 1, y: 0 }}
                     className="mb-8"
                 >
+                    <button
+                        onClick={() => router.back()}
+                        className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-2 transition-colors"
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Back
+                    </button>
                     <h1 className="text-3xl font-bold text-neutral-dark">Profile Settings</h1>
                     <p className="text-gray-500">Manage your account and preferences</p>
                 </motion.div>

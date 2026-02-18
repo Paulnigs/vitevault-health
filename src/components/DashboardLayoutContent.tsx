@@ -5,13 +5,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import { motion } from 'framer-motion';
-import DemoBanner from '@/components/DemoBanner';
 
-interface DashboardLayoutProps {
+
+interface DashboardLayoutContentProps {
     children: ReactNode;
 }
 
-export default function DashboardLayout({ children }: DashboardLayoutProps) {
+export default function DashboardLayoutContent({ children }: DashboardLayoutContentProps) {
     const { data: session } = useSession();
     const pathname = usePathname();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -21,21 +21,20 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     const navItems = {
         child: [
             { href: '/dashboard/child', label: 'Dashboard', icon: 'home' },
+            { href: '/wallet', label: 'Wallet', icon: 'wallet' },
             { href: '/connections', label: 'Family Links', icon: 'link' },
             { href: '/notifications', label: 'Notifications', icon: 'bell' },
             { href: '/profile', label: 'Profile', icon: 'user' },
         ],
         parent: [
             { href: '/dashboard/parent', label: 'Dashboard', icon: 'home' },
-            { href: '/medications', label: 'Medications', icon: 'pill' },
-            { href: '/wallet', label: 'Wallet', icon: 'wallet' },
             { href: '/connections', label: 'Connections', icon: 'link' },
             { href: '/notifications', label: 'Notifications', icon: 'bell' },
             { href: '/profile', label: 'Profile', icon: 'user' },
         ],
         pharmacy: [
             { href: '/dashboard/pharmacy', label: 'Dashboard', icon: 'home' },
-            { href: '/patients', label: 'Patients', icon: 'users' },
+            { href: '/connections', label: 'Patients', icon: 'users' },
             { href: '/notifications', label: 'Notifications', icon: 'bell' },
             { href: '/profile', label: 'Profile', icon: 'user' },
         ],
@@ -86,7 +85,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     return (
         <div className="min-h-screen bg-[#F8F9FA]">
-            <DemoBanner />
+
 
             {/* Mobile Header */}
             <header className="lg:hidden bg-white shadow-sm sticky top-0 z-30">

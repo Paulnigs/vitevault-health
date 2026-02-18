@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Toaster } from "react-hot-toast";
 import "./globals.css";
-import DemoBanner from "@/components/DemoBanner";
+
 import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
@@ -25,7 +25,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased min-h-screen">
         <Providers>
-          <DemoBanner />
+
           <Toaster
             position="top-right"
             toastOptions={{

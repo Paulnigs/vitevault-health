@@ -55,7 +55,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
                 className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
                 disabled={disabled || isLoading}
                 aria-busy={isLoading}
-                {...props}
+                {...(props as any)}
             >
                 {isLoading ? (
                     <svg

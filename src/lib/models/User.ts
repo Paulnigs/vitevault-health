@@ -12,11 +12,19 @@ export interface IUser extends Document {
     linkCode: string; // Unique code for linking
     avatar?: string;
     phone?: string;
+    address?: string;
+    operatingHours?: string;
+    services?: string[];
+    rating?: number;
+    walletId?: mongoose.Types.ObjectId;
     notifications: {
-        email: boolean;
-        push: boolean;
-        sms: boolean;
+        refillReminders: boolean;
+        depositAlerts: boolean;
+        connectionRequests: boolean;
+        emailNotifications: boolean;
     };
+    resetToken?: string;
+    resetTokenExpiry?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -61,11 +69,22 @@ const UserSchema = new Schema<IUser>(
         phone: {
             type: String,
         },
-        notifications: {
-            email: { type: Boolean, default: true },
-            push: { type: Boolean, default: true },
-            sms: { type: Boolean, default: false },
+        address: { type: String },
+        operatingHours: { type: String },
+        services: [{ type: String }],
+        rating: { type: Number, default: 5.0 },
+        walletId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Wallet',
         },
+        notifications: {
+            refillReminders: { type: Boolean, default: true },
+            depositAlerts: { type: Boolean, default: true },
+            connectionRequests: { type: Boolean, default: true },
+            emailNotifications: { type: Boolean, default: false },
+        },
+        resetToken: { type: String },
+        resetTokenExpiry: { type: Date },
     },
     {
         timestamps: true,
@@ -73,9 +92,7 @@ const UserSchema = new Schema<IUser>(
 );
 
 // Indexes
-UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1 });
-UserSchema.index({ linkCode: 1 });
 
 // Prevent model recompilation in development
 const User: Model<IUser> = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
