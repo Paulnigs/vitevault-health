@@ -1,5 +1,9 @@
 import mongoose from 'mongoose';
 
+if (!process.env.MONGODB_URI) {
+    console.warn('⚠️ MONGODB_URI environment variable is not set! Falling back to localhost.');
+}
+
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/vitavault';
 
 interface GlobalMongoose {
@@ -29,8 +33,12 @@ async function dbConnect(): Promise<typeof mongoose> {
         };
 
         cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-            console.log('MongoDB connected successfully');
+            console.log('✅ MongoDB connected successfully');
             return mongoose;
+        }).catch((error) => {
+            console.error('❌ MongoDB connection failed:', error.message);
+            console.error('Connection string used:', MONGODB_URI.replace(/\/\/.*@/, '//<credentials>@'));
+            throw error;
         });
     }
 
