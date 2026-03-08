@@ -55,6 +55,12 @@ export async function GET() {
                 role: 'child',
             }).select('name email avatar');
 
+            // Get linked pharmacies
+            const pharmacies = await User.find({
+                _id: { $in: user.links || [] },
+                role: 'pharmacy',
+            }).select('name email avatar');
+
             // Calculate last deposit
             let lastDeposit = null;
             if (wallet && wallet.transactions.length > 0) {
@@ -68,6 +74,20 @@ export async function GET() {
                     };
                 }
             }
+
+            // Get recent activity (last 10 transactions)
+            const recentActivity = wallet
+                ? wallet.transactions
+                    .slice(-10)
+                    .reverse()
+                    .map((t: { _id: { toString(): string }; amount: number; type: string; description: string; date: Date }) => ({
+                        id: t._id.toString(),
+                        amount: t.amount,
+                        type: t.type,
+                        description: t.description,
+                        date: t.date,
+                    }))
+                : [];
 
             dashboardData.wallet = wallet ? {
                 id: wallet._id.toString(),
@@ -90,6 +110,13 @@ export async function GET() {
                 name: child.name,
                 avatar: child.avatar || '👤',
             }));
+
+            dashboardData.pharmacies = pharmacies.map((pharmacy) => ({
+                id: pharmacy._id.toString(),
+                name: pharmacy.name,
+            }));
+
+            dashboardData.recentActivity = recentActivity;
 
         } else if (role === 'child') {
             // Get linked parents with their wallets

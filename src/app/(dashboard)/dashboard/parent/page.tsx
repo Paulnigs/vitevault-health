@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Button, Card, CountdownTimer, Modal, Input, Skeleton } from '@/components/ui';
+import { Button, Card, CountdownTimer, Skeleton } from '@/components/ui';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { useRealtime } from '@/hooks/useRealtime';
+import DepositModal from '@/components/DepositModal';
 
 interface Medication {
     id: string;
@@ -22,6 +23,19 @@ interface Child {
     id: string;
     name: string;
     avatar: string;
+}
+
+interface Pharmacy {
+    id: string;
+    name: string;
+}
+
+interface ActivityItem {
+    id: string;
+    amount: number;
+    type: 'deposit' | 'deduction';
+    description: string;
+    date: string;
 }
 
 interface WalletData {
@@ -46,6 +60,8 @@ interface DashboardData {
     wallet: WalletData | null;
     medications: Medication[];
     children: Child[];
+    pharmacies: Pharmacy[];
+    recentActivity: ActivityItem[];
 }
 
 export default function ParentDashboard() {
@@ -53,11 +69,7 @@ export default function ParentDashboard() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-    const [isFastForwardModalOpen, setIsFastForwardModalOpen] = useState(false);
-    const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
-    const [daysToFastForward, setDaysToFastForward] = useState('1');
-    const [isSimulating, setIsSimulating] = useState(false);
-
+    const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
 
     // Setup real-time updates
     useRealtime({
@@ -102,42 +114,16 @@ export default function ParentDashboard() {
         }
     };
 
-    const handleFastForward = async () => {
-        if (!selectedMedication) return;
-
-        setIsSimulating(true);
-
-        try {
-            const response = await fetch('/api/simulate-deduction', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    medicationId: selectedMedication.id,
-                    daysToSimulate: parseInt(daysToFastForward) || 1,
-                }),
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                if (response.status === 402) {
-                    toast.error(`Low balance! Need ₦${data.refillCost?.toLocaleString()} for ${data.medication}`);
-                } else {
-                    throw new Error(data.error || 'Simulation failed');
-                }
-            } else {
-                toast.success(data.message, { duration: 5000 });
-                // Refresh dashboard data
-                fetchDashboardData();
-            }
-        } catch (error) {
-            console.error('Fast forward error:', error);
-            toast.error('Failed to simulate time');
-        } finally {
-            setIsSimulating(false);
-            setIsFastForwardModalOpen(false);
-            setDaysToFastForward('1');
-        }
+    const formatTimeAgo = (dateStr: string) => {
+        const diff = Date.now() - new Date(dateStr).getTime();
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(diff / 3600000);
+        const days = Math.floor(diff / 86400000);
+        if (minutes < 1) return 'Just now';
+        if (minutes < 60) return `${minutes}m ago`;
+        if (hours < 24) return `${hours}h ago`;
+        if (days < 7) return `${days}d ago`;
+        return new Date(dateStr).toLocaleDateString('en-NG', { month: 'short', day: 'numeric' });
     };
 
     if (loading || status === 'loading') {
@@ -157,17 +143,47 @@ export default function ParentDashboard() {
     const wallet = dashboardData?.wallet;
     const medications = dashboardData?.medications || [];
     const children = dashboardData?.children || [];
+    const pharmacies = dashboardData?.pharmacies || [];
+    const recentActivity = dashboardData?.recentActivity || [];
 
     return (
         <div>
             {/* Welcome Header */}
             <div className="mb-8">
-                <h1 className="text-2xl md:text-3xl font-bold text-[#343A40]">
-                    Your Health Dashboard 🏥
-                </h1>
-                <p className="text-[#6C757D] mt-1">
-                    Welcome back, {dashboardData?.user?.name || session?.user?.name}!
-                </p>
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                        <h1 className="text-2xl md:text-3xl font-bold text-[#343A40]">
+                            Your Health Dashboard 🏥
+                        </h1>
+                        <p className="text-[#6C757D] mt-1">
+                            Welcome back, {dashboardData?.user?.name || session?.user?.name}!
+                        </p>
+                    </div>
+                    {/* Connection Code */}
+                    {dashboardData?.user?.linkCode && (
+                        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
+                            <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-[#007BFF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                </svg>
+                                <span className="text-xs text-[#6C757D]">My Code:</span>
+                            </div>
+                            <span className="font-mono font-bold text-[#007BFF] text-sm tracking-wider">{dashboardData.user.linkCode}</span>
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText(dashboardData.user.linkCode);
+                                    toast.success('Code copied!');
+                                }}
+                                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Copy code"
+                            >
+                                <svg className="w-4 h-4 text-[#6C757D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Wallet Balance Card */}
@@ -190,11 +206,20 @@ export default function ParentDashboard() {
                     </div>
                     <div className="flex items-center gap-2">
                         {wallet && (
-                            <Link href={`/wallet/${wallet.id}`}>
-                                <Button variant="outline" className="bg-white/20 border-white/30 text-white hover:bg-white/30">
-                                    View Details
+                            <>
+                                <Button
+                                    variant="outline"
+                                    className="bg-white/20 border-white/30 text-white hover:bg-white/30"
+                                    onClick={() => setIsDepositModalOpen(true)}
+                                >
+                                    💰 Deposit
                                 </Button>
-                            </Link>
+                                <Link href={`/wallet/${wallet.id}`}>
+                                    <Button variant="outline" className="bg-white/20 border-white/30 text-white hover:bg-white/30">
+                                        View Details
+                                    </Button>
+                                </Link>
+                            </>
                         )}
                         <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
                             <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,29 +276,28 @@ export default function ParentDashboard() {
                                             Refill cost: ₦{med.refillCost.toLocaleString()}
                                         </p>
 
-                                        <div className="flex gap-2 w-full">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="flex-1"
-                                                onClick={() => {
-                                                    setSelectedMedication(med);
-                                                    setIsFastForwardModalOpen(true);
-                                                }}
-                                            >
-                                                ⏩ Fast Forward
-                                            </Button>
-                                            {med.daysRemaining <= 3 && (
-                                                <Button
-                                                    variant="secondary"
-                                                    size="sm"
-                                                    className="flex-1"
-                                                    onClick={() => toast.success('Refill requested!')}
-                                                >
-                                                    Refill Now
-                                                </Button>
-                                            )}
-                                        </div>
+                                        {/* Refill request - check pharmacy connection */}
+                                        {med.daysRemaining <= 3 && (
+                                            <div className="w-full">
+                                                {pharmacies.length > 0 ? (
+                                                    <Button
+                                                        variant="secondary"
+                                                        size="sm"
+                                                        className="w-full"
+                                                        onClick={() => toast.success(`Refill request sent to ${pharmacies[0].name}!`)}
+                                                    >
+                                                        💊 Request Refill
+                                                    </Button>
+                                                ) : (
+                                                    <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                                                        ⚠️ No pharmacy connected yet.{' '}
+                                                        <Link href="/connections" className="underline font-medium">
+                                                            Connect one
+                                                        </Link>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </Card>
                             </motion.div>
@@ -283,7 +307,7 @@ export default function ParentDashboard() {
             </div>
 
             {/* Connected Children */}
-            <div>
+            <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-bold text-[#343A40]">Connected Children</h2>
                     <Link href="/connections">
@@ -323,51 +347,106 @@ export default function ParentDashboard() {
                 )}
             </div>
 
-            {/* Fast Forward Modal */}
-            <Modal
-                isOpen={isFastForwardModalOpen}
-                onClose={() => setIsFastForwardModalOpen(false)}
-                title="⏩ Fast Forward Simulation"
-            >
-                <div className="space-y-4">
-                    <p className="text-[#6C757D]">
-                        Simulate {selectedMedication?.name} usage over time. If days reach 0,
-                        auto-deduction will trigger.
-                    </p>
-
-                    <div className="p-4 bg-[#F8F9FA] rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-[#6C757D]">Current days remaining:</span>
-                            <span className="font-bold text-[#343A40]">{selectedMedication?.daysRemaining}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span className="text-[#6C757D]">Refill cost:</span>
-                            <span className="font-bold text-[#DC3545]">
-                                ₦{selectedMedication?.refillCost.toLocaleString()}
-                            </span>
-                        </div>
-                    </div>
-
-                    <Input
-                        label="Days to Fast Forward"
-                        type="number"
-                        min={1}
-                        max={30}
-                        value={daysToFastForward}
-                        onChange={(e) => setDaysToFastForward(e.target.value)}
-                    />
-
-                    <Button
-                        variant="accent"
-                        size="lg"
-                        className="w-full"
-                        isLoading={isSimulating}
-                        onClick={handleFastForward}
-                    >
-                        Simulate {daysToFastForward} Day(s)
-                    </Button>
+            {/* Connected Pharmacies */}
+            <div className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-bold text-[#343A40]">Connected Pharmacies</h2>
+                    <Link href="/connections">
+                        <Button variant="outline" size="sm">
+                            Manage
+                        </Button>
+                    </Link>
                 </div>
-            </Modal>
+
+                {pharmacies.length === 0 ? (
+                    <Card className="text-center py-6">
+                        <div className="text-3xl mb-2">🏪</div>
+                        <p className="text-[#6C757D] mb-1 text-sm">No connected pharmacy yet</p>
+                        <p className="text-xs text-[#6C757D] mb-3">
+                            Connect a pharmacy to enable medication refills and auto-deductions.
+                        </p>
+                        <Link href="/connections">
+                            <Button variant="primary" size="sm">
+                                Connect Pharmacy
+                            </Button>
+                        </Link>
+                    </Card>
+                ) : (
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {pharmacies.map((pharmacy) => (
+                            <Card key={pharmacy.id} className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-2xl">
+                                    🏪
+                                </div>
+                                <div>
+                                    <p className="font-bold text-[#343A40]">{pharmacy.name}</p>
+                                    <p className="text-sm text-[#28A745]">Connected</p>
+                                </div>
+                            </Card>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Activity Timeline — only render if there is actual data */}
+            {recentActivity.length > 0 && (
+                <div>
+                    <h2 className="text-xl font-bold text-[#343A40] mb-4">Activity Timeline</h2>
+                    <Card>
+                        <div className="relative">
+                            {/* Timeline line */}
+                            <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200" />
+
+                            {recentActivity.map((activity, index) => (
+                                <div key={activity.id} className="relative pl-10 pb-6 last:pb-0">
+                                    {/* Timeline dot */}
+                                    <div
+                                        className={`absolute left-2.5 w-3 h-3 rounded-full ${activity.type === 'deposit'
+                                                ? 'bg-[#28A745]'
+                                                : 'bg-[#DC3545]'
+                                            }`}
+                                    />
+
+                                    <motion.div
+                                        initial={{ opacity: 0, x: -10 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: index * 0.05 }}
+                                        className="flex items-center justify-between"
+                                    >
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm">
+                                                    {activity.type === 'deposit' ? '💰' : '💸'}
+                                                </span>
+                                                <span className="font-medium text-[#343A40] text-sm">
+                                                    {activity.description || (activity.type === 'deposit' ? 'Deposit' : 'Auto-Deduction')}
+                                                </span>
+                                            </div>
+                                            <span className="text-xs text-[#6C757D] ml-6">
+                                                {formatTimeAgo(activity.date)}
+                                            </span>
+                                        </div>
+                                        <span className={`text-sm font-bold ${activity.type === 'deposit' ? 'text-[#28A745]' : 'text-[#DC3545]'
+                                            }`}>
+                                            {activity.type === 'deposit' ? '+' : '-'}₦{activity.amount.toLocaleString()}
+                                        </span>
+                                    </motion.div>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* Deposit Modal */}
+            {wallet && (
+                <DepositModal
+                    isOpen={isDepositModalOpen}
+                    onClose={() => setIsDepositModalOpen(false)}
+                    walletId={wallet.id}
+                    onSuccess={() => fetchDashboardData()}
+                />
+            )}
         </div>
     );
 }

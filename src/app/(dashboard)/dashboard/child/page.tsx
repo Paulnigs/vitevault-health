@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button, Card, Modal, Input, CountdownTimer, Skeleton } from '@/components/ui';
 import { DEMO_CARDS, formatCardNumber } from '@/lib/cardValidation';
 import toast from 'react-hot-toast';
@@ -48,6 +48,9 @@ interface DashboardData {
     depositsThisMonth: number;
 }
 
+// ── Deposit Modal Steps ──
+type DepositStep = 'amount' | 'payment' | 'lock' | 'review';
+
 export default function ChildDashboard() {
     const { data: session, status } = useSession();
     const router = useRouter();
@@ -57,16 +60,26 @@ export default function ChildDashboard() {
     const [selectedParent, setSelectedParent] = useState<Parent | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
+    // ── Lock Modal (standalone from dashboard) ──
+    const [isLockModalOpen, setIsLockModalOpen] = useState(false);
+    const [lockParentId, setLockParentId] = useState<string>('');
+    const [lockMedName, setLockMedName] = useState('');
+    const [lockAmount, setLockAmount] = useState('');
+    const [lockLoading, setLockLoading] = useState(false);
+
+    // ── Deposit multi-step state ──
+    const [depositStep, setDepositStep] = useState<DepositStep>('amount');
     const [depositForm, setDepositForm] = useState({
         amount: '',
         cardNumber: '',
         expiry: '',
         cvv: '',
-        schedule: 'one-time',
     });
 
-    // Lock State
+    // Lock settings inside deposit flow
     const [isLockEnabled, setIsLockEnabled] = useState(false);
+    const [lockOption, setLockOption] = useState<'all' | 'partial'>('all');
+    const [depositLockAmount, setDepositLockAmount] = useState('');
     const [lockMedicationName, setLockMedicationName] = useState('');
     const [lockDuration, setLockDuration] = useState(30);
 
@@ -105,6 +118,13 @@ export default function ChildDashboard() {
             return;
         }
         setSelectedParent(parent);
+        setDepositStep('amount');
+        setDepositForm({ amount: '', cardNumber: '', expiry: '', cvv: '' });
+        setIsLockEnabled(false);
+        setLockOption('all');
+        setDepositLockAmount('');
+        setLockMedicationName('');
+        setLockDuration(30);
         setIsDepositModalOpen(true);
     };
 
@@ -121,6 +141,10 @@ export default function ChildDashboard() {
 
         setIsLoading(true);
 
+        const lockAmt = isLockEnabled
+            ? (lockOption === 'all' ? parseInt(depositForm.amount) : parseInt(depositLockAmount) || 0)
+            : 0;
+
         try {
             const response = await fetch('/api/deposit', {
                 method: 'POST',
@@ -133,11 +157,11 @@ export default function ChildDashboard() {
                         expiry: depositForm.expiry,
                         cvv: depositForm.cvv,
                     },
-                    schedule: depositForm.schedule,
+                    schedule: 'one-time',
                     lockSettings: {
                         enabled: isLockEnabled,
                         medicationName: lockMedicationName,
-                        amount: isLockEnabled ? parseInt(depositForm.amount) : 0,
+                        amount: lockAmt,
                         durationDays: lockDuration
                     }
                 }),
@@ -151,24 +175,68 @@ export default function ChildDashboard() {
 
             toast.success(`₦${parseInt(depositForm.amount).toLocaleString()} deposited to ${selectedParent.name}'s wallet! 🎉`);
             setIsDepositModalOpen(false);
-            setDepositForm({
-                amount: '',
-                cardNumber: '',
-                expiry: '',
-                cvv: '',
-                schedule: 'one-time',
-            });
+            setDepositForm({ amount: '', cardNumber: '', expiry: '', cvv: '' });
             setIsLockEnabled(false);
             setLockMedicationName('');
             setLockDuration(30);
 
-            // Refresh dashboard data
             fetchDashboardData();
         } catch (error) {
             console.error('Deposit error:', error);
             toast.error(error instanceof Error ? error.message : 'Deposit failed');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    // ── Lock Funds from Dashboard (add to existing medication) ──
+    const handleLockFunds = async () => {
+        if (!lockMedName.trim()) {
+            toast.error('Please select a medication');
+            return;
+        }
+        const amt = Number(lockAmount);
+        if (!amt || amt <= 0) {
+            toast.error('Please enter a valid amount');
+            return;
+        }
+        const parent = parents.find(p => p.walletId === lockParentId);
+        if (!parent) {
+            toast.error('Please select a parent wallet');
+            return;
+        }
+        if (amt > (parent.availableBalance || 0)) {
+            toast.error(`Insufficient available balance. Max: ₦${(parent.availableBalance || 0).toLocaleString()}`);
+            return;
+        }
+
+        setLockLoading(true);
+        try {
+            const res = await fetch(`/api/wallet/${lockParentId}/lock`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'create',
+                    medicationName: lockMedName.trim(),
+                    amount: amt,
+                    durationDays: 30, // uses existing duration
+                }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                toast.success(`₦${amt.toLocaleString()} added to ${lockMedName}`, { icon: '🔒' });
+                setIsLockModalOpen(false);
+                setLockMedName('');
+                setLockAmount('');
+                setLockParentId('');
+                await fetchDashboardData();
+            } else {
+                toast.error(data.error || 'Failed to lock funds');
+            }
+        } catch {
+            toast.error('Network error');
+        } finally {
+            setLockLoading(false);
         }
     };
 
@@ -190,50 +258,115 @@ export default function ChildDashboard() {
 
     const parents = dashboardData?.parents || [];
     const allMedications = parents.flatMap((p) => p.medications);
+    const allLockedFunds = parents.flatMap(p =>
+        (p.lockedFunds || []).map(l => ({ ...l, parentName: p.name, walletId: p.walletId || '' }))
+    );
+    const parentsWithWallet = parents.filter(p => p.walletId);
 
     // Aggregate wallet data across all parents
     const totalBalance = parents.reduce((s, p) => s + (p.balance || 0), 0);
-    const totalAvailable = parents.reduce((s, p) => s + (p.availableBalance || 0), 0);
-    const totalLocked = parents.reduce((s, p) => s + (p.totalLocked || 0), 0);
+
+    // ── Deposit step navigation helpers ──
+    const depositSteps: DepositStep[] = ['amount', 'payment', 'lock', 'review'];
+    const currentStepIndex = depositSteps.indexOf(depositStep);
+
+    const canGoNext = () => {
+        switch (depositStep) {
+            case 'amount':
+                return !!depositForm.amount && parseInt(depositForm.amount) > 0;
+            case 'payment':
+                return !!depositForm.cardNumber && !!depositForm.expiry && !!depositForm.cvv;
+            case 'lock':
+                if (!isLockEnabled) return true;
+                if (!lockMedicationName) return false;
+                if (lockOption === 'partial' && (!depositLockAmount || parseInt(depositLockAmount) <= 0 || parseInt(depositLockAmount) > parseInt(depositForm.amount))) return false;
+                return true;
+            case 'review':
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    const stepLabels: Record<DepositStep, string> = {
+        amount: 'Amount',
+        payment: 'Payment',
+        lock: 'Lock Funds',
+        review: 'Review',
+    };
 
     return (
         <div>
             {/* Welcome Header */}
             <div className="mb-8">
-                <h1 className="text-2xl md:text-3xl font-bold text-[#343A40]">
-                    Welcome Back, {dashboardData?.user?.name || session?.user?.name}! 👋
-                </h1>
-                <p className="text-[#6C757D] mt-1">
-                    Manage your family&apos;s health with ease
-                </p>
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                        <h1 className="text-2xl md:text-3xl font-bold text-[#343A40]">
+                            Welcome Back, {dashboardData?.user?.name || session?.user?.name}! 👋
+                        </h1>
+                        <p className="text-[#6C757D] mt-1">
+                            Manage your family&apos;s health with ease
+                        </p>
+                    </div>
+                    {/* Connection Code */}
+                    {dashboardData?.user?.linkCode && (
+                        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
+                            <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-[#007BFF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                </svg>
+                                <span className="text-xs text-[#6C757D]">My Code:</span>
+                            </div>
+                            <span className="font-mono font-bold text-[#007BFF] text-sm tracking-wider">{dashboardData.user.linkCode}</span>
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText(dashboardData.user.linkCode);
+                                    toast.success('Code copied!');
+                                }}
+                                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Copy code"
+                            >
+                                <svg className="w-4 h-4 text-[#6C757D]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
 
-            {/* Wallet Summary — links to /wallet */}
-            <Link href="/wallet">
-                <div className="rounded-2xl p-5 mb-8 text-white cursor-pointer hover:shadow-lg transition-shadow" style={{ background: 'linear-gradient(135deg, #007BFF 0%, #0056b3 50%, #003d80 100%)' }}>
-                    <div className="flex items-center justify-between mb-3">
-                        <div>
-                            <p className="text-sm opacity-80">Total Balance</p>
-                            <p className="text-3xl font-bold">₦{totalBalance.toLocaleString()}</p>
+            {/* Wallet Summary — Total Balance Only + Lock Funds Button */}
+            <div className="rounded-2xl p-5 mb-8 text-white" style={{ background: 'linear-gradient(135deg, #007BFF 0%, #0056b3 50%, #003d80 100%)' }}>
+                <div className="flex items-center justify-between">
+                    <Link href="/wallet" className="flex-1 cursor-pointer">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm opacity-80">Total Balance</p>
+                                <p className="text-3xl font-bold">₦{totalBalance.toLocaleString()}</p>
+                            </div>
+                            <div className="bg-white/15 rounded-full p-2">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                            </div>
                         </div>
-                        <div className="bg-white/15 rounded-full p-2">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-white/15 backdrop-blur-sm rounded-lg p-2 text-center">
-                            <p className="text-xs opacity-70">Available</p>
-                            <p className="text-lg font-bold">₦{totalAvailable.toLocaleString()}</p>
-                        </div>
-                        <div className="bg-white/15 backdrop-blur-sm rounded-lg p-2 text-center">
-                            <p className="text-xs opacity-70">🔒 Locked</p>
-                            <p className="text-lg font-bold">₦{totalLocked.toLocaleString()}</p>
-                        </div>
-                    </div>
+                    </Link>
                 </div>
-            </Link>
+                {/* Lock Funds Button on Dashboard */}
+                {parentsWithWallet.length > 0 && (
+                    <button
+                        onClick={() => {
+                            if (parentsWithWallet.length === 1) {
+                                setLockParentId(parentsWithWallet[0].walletId!);
+                            }
+                            setIsLockModalOpen(true);
+                        }}
+                        className="mt-4 w-full py-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white font-medium rounded-xl transition-all flex items-center justify-center gap-2 text-sm border border-white/20"
+                    >
+                        🔒 Lock Funds
+                    </button>
+                )}
+            </div>
 
             {/* Quick Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -302,16 +435,6 @@ export default function ChildDashboard() {
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2 mb-3">
-                                        <div className="bg-green-50 p-2 rounded-lg text-center">
-                                            <p className="text-xs text-green-600 font-medium">Available</p>
-                                            <p className="text-sm font-bold text-green-700">₦{(parent.availableBalance || 0).toLocaleString()}</p>
-                                        </div>
-                                        <div className="bg-amber-50 p-2 rounded-lg text-center">
-                                            <p className="text-xs text-amber-600 font-medium">🔒 Locked</p>
-                                            <p className="text-sm font-bold text-amber-700">₦{(parent.totalLocked || 0).toLocaleString()}</p>
-                                        </div>
-                                    </div>
                                     <Button
                                         variant="primary"
                                         size="sm"
@@ -358,174 +481,504 @@ export default function ChildDashboard() {
                 )}
             </div>
 
-            {/* Deposit Modal */}
+            {/* ══════════ LOCK FUNDS MODAL (Dashboard — Add to Existing Medication) ══════════ */}
+            <Modal
+                isOpen={isLockModalOpen}
+                onClose={() => {
+                    setIsLockModalOpen(false);
+                    setLockMedName('');
+                    setLockAmount('');
+                    setLockParentId('');
+                }}
+                title="🔒 Add Funds to Medication"
+            >
+                <div className="space-y-4">
+                    <p className="text-sm text-[#6C757D]">
+                        Add more funds to an existing locked medication. The original duration remains unchanged.
+                    </p>
+
+                    {/* Parent selector (if multiple) */}
+                    {parentsWithWallet.length > 1 && (
+                        <div>
+                            <label className="block text-sm font-medium text-[#343A40] mb-1">
+                                Select Parent Wallet
+                            </label>
+                            <select
+                                value={lockParentId}
+                                onChange={(e) => setLockParentId(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-[#343A40] bg-white"
+                            >
+                                <option value="">Choose a wallet...</option>
+                                {parentsWithWallet.map(p => (
+                                    <option key={p.walletId} value={p.walletId!}>
+                                        {p.name} — Available: ₦{(p.availableBalance || 0).toLocaleString()}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Available balance indicator */}
+                    {lockParentId && (
+                        <div className="p-3 bg-blue-50 rounded-lg text-blue-800 text-sm font-medium">
+                            Available to Lock: ₦{(parents.find(p => p.walletId === lockParentId)?.availableBalance || 0).toLocaleString()}
+                        </div>
+                    )}
+
+                    {/* Existing medications to choose from */}
+                    {(() => {
+                        const selectedParentLocks = lockParentId
+                            ? (parents.find(p => p.walletId === lockParentId)?.lockedFunds || [])
+                            : allLockedFunds;
+                        const uniqueMeds = Array.from(new Set(selectedParentLocks.map(l => l.medicationName)));
+
+                        if (uniqueMeds.length > 0) {
+                            return (
+                                <div>
+                                    <label className="block text-sm font-medium text-[#343A40] mb-2">
+                                        Select Medication
+                                    </label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {uniqueMeds.map(med => {
+                                            const isSelected = lockMedName === med;
+                                            const lockedAmt = selectedParentLocks
+                                                .filter(l => l.medicationName === med)
+                                                .reduce((s, l) => s + l.amount, 0);
+                                            return (
+                                                <button
+                                                    key={med}
+                                                    type="button"
+                                                    onClick={() => setLockMedName(med)}
+                                                    className={`
+                                                        px-3 py-2 rounded-lg text-sm font-medium transition-all border
+                                                        ${isSelected
+                                                            ? 'bg-amber-100 border-amber-400 text-amber-800 ring-2 ring-amber-300'
+                                                            : 'bg-gray-50 border-gray-200 text-[#343A40] hover:bg-gray-100'
+                                                        }
+                                                    `}
+                                                >
+                                                    <span className="flex items-center gap-1.5">
+                                                        💊 {med}
+                                                        <span className={`text-xs ${isSelected ? 'text-amber-600' : 'text-[#6C757D]'}`}>
+                                                            (₦{lockedAmt.toLocaleString()})
+                                                        </span>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        }
+                        return (
+                            <div className="p-4 bg-gray-50 rounded-lg text-center">
+                                <p className="text-sm text-[#6C757D]">No existing locked medications found. Use the Deposit flow to lock funds for a new medication.</p>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Show selected medication info */}
+                    {lockMedName && (() => {
+                        const selectedParentLocks = lockParentId
+                            ? (parents.find(p => p.walletId === lockParentId)?.lockedFunds || [])
+                            : allLockedFunds;
+                        const lockedAmt = selectedParentLocks
+                            .filter(l => l.medicationName === lockMedName)
+                            .reduce((s, l) => s + l.amount, 0);
+                        return (
+                            <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 flex items-center gap-3">
+                                <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">💊</div>
+                                <div>
+                                    <p className="font-semibold text-[#343A40] text-sm">{lockMedName}</p>
+                                    <p className="text-xs text-amber-700">
+                                        Currently locked: ₦{lockedAmt.toLocaleString()} · Adding more funds
+                                    </p>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Amount only — no duration */}
+                    {lockMedName && (
+                        <Input
+                            label="Amount to Add (₦)"
+                            type="number"
+                            placeholder="0.00"
+                            value={lockAmount}
+                            onChange={(e) => setLockAmount(e.target.value)}
+                            required
+                        />
+                    )}
+
+                    <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                        <p className="text-xs text-amber-800">
+                            ⚠️ <strong>Early unlock fee:</strong> Unlocking before the duration expires will incur a <strong>5% penalty</strong> on the locked amount.
+                        </p>
+                    </div>
+
+                    <Button
+                        variant="primary"
+                        size="lg"
+                        className="w-full"
+                        isLoading={lockLoading}
+                        disabled={lockLoading || !lockMedName || !lockAmount || !lockParentId}
+                        onClick={handleLockFunds}
+                    >
+                        {lockAmount && Number(lockAmount) > 0
+                            ? `Add ₦${Number(lockAmount).toLocaleString()} to ${lockMedName}`
+                            : 'Add Funds'}
+                    </Button>
+                </div>
+            </Modal>
+
+            {/* ══════════ DEPOSIT MODAL (Multi-Stage) ══════════ */}
             <Modal
                 isOpen={isDepositModalOpen}
                 onClose={() => setIsDepositModalOpen(false)}
                 title={`Deposit to ${selectedParent?.name}'s Wallet`}
                 size="lg"
             >
-                <div className="space-y-4">
-                    {/* Preset Amounts */}
-                    <div>
-                        <label className="block text-sm font-medium text-[#343A40] mb-2">
-                            Quick Amount
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                            {presetAmounts.map((amount) => (
-                                <button
-                                    key={amount}
-                                    onClick={() => setDepositForm((prev) => ({ ...prev, amount: amount.toString() }))}
-                                    className={`
-                    px-4 py-2 rounded-lg border-2 font-medium transition-colors
-                    ${depositForm.amount === amount.toString()
-                                            ? 'border-[#FFC107] bg-[#FFC107]/10 text-[#343A40]'
-                                            : 'border-gray-200 hover:border-[#FFC107] text-[#6C757D]'
-                                        }
-                  `}
-                                >
-                                    ₦{amount.toLocaleString()}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Custom Amount */}
-                    <Input
-                        label="Or Enter Amount"
-                        type="number"
-                        placeholder="Enter amount in Naira"
-                        value={depositForm.amount}
-                        onChange={(e) => setDepositForm((prev) => ({ ...prev, amount: e.target.value }))}
-                        leftIcon={<span className="text-[#6C757D]">₦</span>}
-                    />
-
-                    {/* Card Details */}
-                    <div className="p-4 bg-[#F8F9FA] rounded-lg">
-                        <p className="text-sm text-[#6C757D] mb-3">
-                            💳 Card Details (Demo - use test card: {DEMO_CARDS.visa})
-                        </p>
-
-                        <Input
-                            placeholder="Card Number"
-                            value={depositForm.cardNumber}
-                            onChange={(e) => setDepositForm((prev) => ({
-                                ...prev,
-                                cardNumber: formatCardNumber(e.target.value).slice(0, 19)
-                            }))}
-                            className="mb-3"
-                        />
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <Input
-                                placeholder="MM/YY"
-                                value={depositForm.expiry}
-                                onChange={(e) => {
-                                    let value = e.target.value.replace(/\D/g, '');
-                                    if (value.length >= 2) {
-                                        value = value.slice(0, 2) + '/' + value.slice(2, 4);
-                                    }
-                                    setDepositForm((prev) => ({ ...prev, expiry: value }));
-                                }}
-                                maxLength={5}
-                            />
-                            <Input
-                                placeholder="CVV"
-                                type="password"
-                                value={depositForm.cvv}
-                                onChange={(e) => setDepositForm((prev) => ({
-                                    ...prev,
-                                    cvv: e.target.value.replace(/\D/g, '').slice(0, 4)
-                                }))}
-                                maxLength={4}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Schedule */}
-                    <div>
-                        <label className="block text-sm font-medium text-[#343A40] mb-2">
-                            Payment Schedule
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                            {['one-time', 'weekly', 'monthly'].map((schedule) => (
-                                <button
-                                    key={schedule}
-                                    onClick={() => setDepositForm((prev) => ({ ...prev, schedule }))}
-                                    className={`
-                    px-4 py-2 rounded-lg border-2 font-medium transition-colors capitalize
-                    ${depositForm.schedule === schedule
-                                            ? 'border-[#007BFF] bg-[#007BFF]/10 text-[#007BFF]'
-                                            : 'border-gray-200 hover:border-[#007BFF] text-[#6C757D]'
-                                        }
-                  `}
-                                >
-                                    {schedule.replace('-', ' ')}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-
-                    {/* Lock Funds Option */}
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="flex items-center justify-between mb-4">
-                            <div>
-                                <h3 className="font-semibold text-[#343A40]">Lock Funds?</h3>
-                                <p className="text-xs text-[#6C757D]">Reserve money for specific medication</p>
+                <div className="space-y-5">
+                    {/* Step Indicator */}
+                    <div className="flex items-center justify-between mb-2">
+                        {depositSteps.map((step, i) => (
+                            <div key={step} className="flex items-center flex-1">
+                                <div className="flex flex-col items-center flex-1">
+                                    <div
+                                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 ${i < currentStepIndex
+                                            ? 'bg-[#28A745] text-white'
+                                            : i === currentStepIndex
+                                                ? 'bg-[#007BFF] text-white shadow-lg shadow-blue-200'
+                                                : 'bg-gray-200 text-[#6C757D]'
+                                            }`}
+                                    >
+                                        {i < currentStepIndex ? '✓' : i + 1}
+                                    </div>
+                                    <span className={`text-[10px] mt-1 font-medium ${i === currentStepIndex ? 'text-[#007BFF]' : 'text-[#6C757D]'
+                                        }`}>
+                                        {stepLabels[step]}
+                                    </span>
+                                </div>
+                                {i < depositSteps.length - 1 && (
+                                    <div className={`h-0.5 flex-1 mx-1 rounded-full transition-all duration-300 ${i < currentStepIndex ? 'bg-[#28A745]' : 'bg-gray-200'
+                                        }`} />
+                                )}
                             </div>
-                            <label className="relative inline-flex items-center cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="sr-only peer"
-                                    checked={isLockEnabled}
-                                    onChange={(e) => setIsLockEnabled(e.target.checked)}
-                                />
-                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#007BFF]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#007BFF]"></div>
-                            </label>
-                        </div>
+                        ))}
+                    </div>
 
-                        {isLockEnabled && (
-                            <div className="space-y-3">
+                    <AnimatePresence mode="wait">
+                        {/* ── Step 1: Amount ── */}
+                        {depositStep === 'amount' && (
+                            <motion.div
+                                key="amount"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                transition={{ duration: 0.2 }}
+                                className="space-y-4"
+                            >
+                                <div>
+                                    <label className="block text-sm font-medium text-[#343A40] mb-2">
+                                        Quick Amount
+                                    </label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {presetAmounts.map((amount) => (
+                                            <button
+                                                key={amount}
+                                                onClick={() => setDepositForm((prev) => ({ ...prev, amount: amount.toString() }))}
+                                                className={`
+                                                    px-4 py-2 rounded-lg border-2 font-medium transition-all
+                                                    ${depositForm.amount === amount.toString()
+                                                        ? 'border-[#FFC107] bg-[#FFC107]/10 text-[#343A40] shadow-md'
+                                                        : 'border-gray-200 hover:border-[#FFC107] text-[#6C757D]'
+                                                    }
+                                                `}
+                                            >
+                                                ₦{amount.toLocaleString()}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
                                 <Input
-                                    label="Medication Name"
-                                    placeholder="e.g. Insulin"
-                                    value={lockMedicationName}
-                                    onChange={(e) => setLockMedicationName(e.target.value)}
-                                    required={isLockEnabled}
-                                />
-                                <Input
-                                    label="Duration (Days)"
+                                    label="Or Enter Amount"
                                     type="number"
-                                    value={lockDuration}
-                                    onChange={(e) => setLockDuration(Number(e.target.value))}
-                                    min={1}
-                                    required={isLockEnabled}
+                                    placeholder="Enter amount in Naira"
+                                    value={depositForm.amount}
+                                    onChange={(e) => setDepositForm((prev) => ({ ...prev, amount: e.target.value }))}
+                                    leftIcon={<span className="text-[#6C757D]">₦</span>}
                                 />
-                                <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                                    ⚠️ Unlocking early incurs a 5% fee. Auto-unlocks in {lockDuration} days.
-                                </p>
-                            </div>
+
+                                {depositForm.amount && parseInt(depositForm.amount) > 0 && (
+                                    <div className="p-3 bg-blue-50 rounded-lg text-center">
+                                        <p className="text-lg font-bold text-[#007BFF]">
+                                            ₦{parseInt(depositForm.amount).toLocaleString()}
+                                        </p>
+                                        <p className="text-xs text-[#6C757D]">will be deposited</p>
+                                    </div>
+                                )}
+                            </motion.div>
                         )}
 
+                        {/* ── Step 2: Payment ── */}
+                        {depositStep === 'payment' && (
+                            <motion.div
+                                key="payment"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                transition={{ duration: 0.2 }}
+                                className="space-y-4"
+                            >
+                                <div className="p-4 bg-[#F8F9FA] rounded-lg">
+                                    <p className="text-sm text-[#6C757D] mb-3">
+                                        💳 Card Details (Demo - use test card: {DEMO_CARDS.visa})
+                                    </p>
 
+                                    <Input
+                                        placeholder="Card Number"
+                                        value={depositForm.cardNumber}
+                                        onChange={(e) => setDepositForm((prev) => ({
+                                            ...prev,
+                                            cardNumber: formatCardNumber(e.target.value).slice(0, 19)
+                                        }))}
+                                        className="mb-3"
+                                    />
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <Input
+                                            placeholder="MM/YY"
+                                            value={depositForm.expiry}
+                                            onChange={(e) => {
+                                                let value = e.target.value.replace(/\D/g, '');
+                                                if (value.length >= 2) {
+                                                    value = value.slice(0, 2) + '/' + value.slice(2, 4);
+                                                }
+                                                setDepositForm((prev) => ({ ...prev, expiry: value }));
+                                            }}
+                                            maxLength={5}
+                                        />
+                                        <Input
+                                            placeholder="CVV"
+                                            type="password"
+                                            value={depositForm.cvv}
+                                            onChange={(e) => setDepositForm((prev) => ({
+                                                ...prev,
+                                                cvv: e.target.value.replace(/\D/g, '').slice(0, 4)
+                                            }))}
+                                            maxLength={4}
+                                        />
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+
+                        {/* ── Step 3: Lock Funds Option ── */}
+                        {depositStep === 'lock' && (
+                            <motion.div
+                                key="lock"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                transition={{ duration: 0.2 }}
+                                className="space-y-4"
+                            >
+                                <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div>
+                                            <h3 className="font-semibold text-[#343A40]">Lock Funds?</h3>
+                                            <p className="text-xs text-[#6C757D]">Reserve money for specific medication</p>
+                                        </div>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                className="sr-only peer"
+                                                checked={isLockEnabled}
+                                                onChange={(e) => setIsLockEnabled(e.target.checked)}
+                                            />
+                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#007BFF]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#007BFF]"></div>
+                                        </label>
+                                    </div>
+
+                                    <AnimatePresence>
+                                        {isLockEnabled && (
+                                            <motion.div
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: 'auto', opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                className="overflow-hidden space-y-3"
+                                            >
+                                                {/* Lock all or partial */}
+                                                <div>
+                                                    <label className="block text-sm font-medium text-[#343A40] mb-2">
+                                                        How much to lock?
+                                                    </label>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setLockOption('all')}
+                                                            className={`p-3 rounded-xl border-2 text-left transition-all ${lockOption === 'all'
+                                                                ? 'border-[#007BFF] bg-[#007BFF]/5'
+                                                                : 'border-gray-200 hover:border-gray-300'
+                                                                }`}
+                                                        >
+                                                            <p className="text-sm font-semibold text-[#343A40]">Lock All</p>
+                                                            <p className="text-xs text-[#6C757D]">₦{parseInt(depositForm.amount || '0').toLocaleString()}</p>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setLockOption('partial')}
+                                                            className={`p-3 rounded-xl border-2 text-left transition-all ${lockOption === 'partial'
+                                                                ? 'border-[#007BFF] bg-[#007BFF]/5'
+                                                                : 'border-gray-200 hover:border-gray-300'
+                                                                }`}
+                                                        >
+                                                            <p className="text-sm font-semibold text-[#343A40]">Partial Amount</p>
+                                                            <p className="text-xs text-[#6C757D]">Choose how much</p>
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Partial amount input */}
+                                                {lockOption === 'partial' && (
+                                                    <Input
+                                                        label={`Amount to Lock (max ₦${parseInt(depositForm.amount || '0').toLocaleString()})`}
+                                                        type="number"
+                                                        placeholder="0.00"
+                                                        value={depositLockAmount}
+                                                        onChange={(e) => setDepositLockAmount(e.target.value)}
+                                                        max={parseInt(depositForm.amount || '0')}
+                                                    />
+                                                )}
+
+                                                <Input
+                                                    label="Medication Name"
+                                                    placeholder="e.g. Insulin"
+                                                    value={lockMedicationName}
+                                                    onChange={(e) => setLockMedicationName(e.target.value)}
+                                                    required={isLockEnabled}
+                                                />
+                                                <Input
+                                                    label="Duration (Days)"
+                                                    type="number"
+                                                    value={lockDuration}
+                                                    onChange={(e) => setLockDuration(Number(e.target.value))}
+                                                    min={1}
+                                                    required={isLockEnabled}
+                                                />
+                                                <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                                                    ⚠️ Unlocking early incurs a 5% fee. Auto-unlocks in {lockDuration} days.
+                                                </p>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+
+                                {!isLockEnabled && (
+                                    <p className="text-sm text-[#6C757D] text-center">
+                                        No funds will be locked. You can skip this step.
+                                    </p>
+                                )}
+                            </motion.div>
+                        )}
+
+                        {/* ── Step 4: Review ── */}
+                        {depositStep === 'review' && (
+                            <motion.div
+                                key="review"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                transition={{ duration: 0.2 }}
+                                className="space-y-3"
+                            >
+                                <div className="rounded-xl border border-gray-200 overflow-hidden">
+                                    <div className="p-4 bg-[#007BFF]/5 border-b border-gray-200">
+                                        <p className="text-sm font-medium text-[#6C757D]">Deposit Summary</p>
+                                    </div>
+                                    <div className="p-4 space-y-3">
+                                        <div className="flex justify-between">
+                                            <span className="text-sm text-[#6C757D]">Recipient</span>
+                                            <span className="text-sm font-semibold text-[#343A40]">{selectedParent?.name}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-sm text-[#6C757D]">Amount</span>
+                                            <span className="text-lg font-bold text-[#007BFF]">
+                                                ₦{parseInt(depositForm.amount || '0').toLocaleString()}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-sm text-[#6C757D]">Card</span>
+                                            <span className="text-sm font-medium text-[#343A40]">
+                                                •••• {depositForm.cardNumber.slice(-4)}
+                                            </span>
+                                        </div>
+                                        {isLockEnabled && (
+                                            <>
+                                                <hr className="border-gray-100" />
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-[#6C757D]">🔒 Lock Amount</span>
+                                                    <span className="text-sm font-bold text-amber-600">
+                                                        ₦{(lockOption === 'all'
+                                                            ? parseInt(depositForm.amount || '0')
+                                                            : parseInt(depositLockAmount || '0')
+                                                        ).toLocaleString()}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-[#6C757D]">Medication</span>
+                                                    <span className="text-sm font-medium text-[#343A40]">{lockMedicationName}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-sm text-[#6C757D]">Lock Duration</span>
+                                                    <span className="text-sm font-medium text-[#343A40]">{lockDuration} days</span>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Navigation Buttons */}
+                    <div className="flex gap-3 pt-2">
+                        {currentStepIndex > 0 && (
+                            <Button
+                                variant="outline"
+                                className="flex-1"
+                                onClick={() => setDepositStep(depositSteps[currentStepIndex - 1])}
+                            >
+                                Back
+                            </Button>
+                        )}
+                        {depositStep !== 'review' ? (
+                            <Button
+                                variant="primary"
+                                className="flex-1"
+                                disabled={!canGoNext()}
+                                onClick={() => setDepositStep(depositSteps[currentStepIndex + 1])}
+                            >
+                                Next →
+                            </Button>
+                        ) : (
+                            <Button
+                                variant="secondary"
+                                size="lg"
+                                className="flex-1"
+                                isLoading={isLoading}
+                                onClick={handleSubmitDeposit}
+                            >
+                                {depositForm.amount
+                                    ? `Deposit ₦${parseInt(depositForm.amount || '0').toLocaleString()}`
+                                    : 'Enter Amount'
+                                }
+                            </Button>
+                        )}
                     </div>
-
-                    {/* Submit */}
-                    <Button
-                        variant="secondary"
-                        size="lg"
-                        className="w-full"
-                        isLoading={isLoading}
-                        onClick={handleSubmitDeposit}
-                    >
-                        {depositForm.amount
-                            ? `Deposit ₦${parseInt(depositForm.amount || '0').toLocaleString()}`
-                            : 'Enter Amount'
-                        }
-                    </Button>
                 </div>
-            </Modal >
-        </div >
+            </Modal>
+        </div>
     );
 }

@@ -1,22 +1,87 @@
 'use client';
 
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 
 interface DashboardLayoutContentProps {
     children: ReactNode;
 }
 
+interface NotificationPreview {
+    id: string;
+    type: string;
+    title: string;
+    message: string;
+    timestamp: string;
+    read: boolean;
+}
+
+const getNotifIcon = (type: string) => {
+    switch (type) {
+        case 'deposit': return '💰';
+        case 'deduction': return '💸';
+        case 'refill': return '💊';
+        case 'connection': return '🤝';
+        default: return '🔔';
+    }
+};
+
+const formatTimeAgo = (timestamp: string) => {
+    const diff = Date.now() - new Date(timestamp).getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    return new Date(timestamp).toLocaleDateString('en-NG', { month: 'short', day: 'numeric' });
+};
+
 export default function DashboardLayoutContent({ children }: DashboardLayoutContentProps) {
     const { data: session } = useSession();
     const pathname = usePathname();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+    // Notification state
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [recentNotifications, setRecentNotifications] = useState<NotificationPreview[]>([]);
+    const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+
     const role = session?.user?.role || 'child';
+
+    // Fetch unread notification count
+    const fetchNotificationCount = useCallback(async () => {
+        try {
+            const res = await fetch('/api/notifications?limit=5');
+            if (res.ok) {
+                const data = await res.json();
+                const notifs: NotificationPreview[] = (data.notifications || []).map((n: any) => ({
+                    id: n._id,
+                    type: n.type,
+                    title: n.title,
+                    message: n.message,
+                    timestamp: n.createdAt,
+                    read: n.read,
+                }));
+                setRecentNotifications(notifs);
+                setUnreadCount(notifs.filter((n: NotificationPreview) => !n.read).length);
+            }
+        } catch {
+            // Silently fail
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchNotificationCount();
+        // Poll every 30 seconds for new notifications
+        const interval = setInterval(fetchNotificationCount, 30000);
+        return () => clearInterval(interval);
+    }, [fetchNotificationCount]);
 
     const navItems = {
         child: [
@@ -83,9 +148,127 @@ export default function DashboardLayoutContent({ children }: DashboardLayoutCont
         return icons[icon] || icons.home;
     };
 
+    // Notification Bell Component
+    const NotificationBell = ({ mobile = false }: { mobile?: boolean }) => (
+        <div className="relative">
+            <button
+                onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+                className={`relative p-2 rounded-lg transition-colors ${mobile
+                        ? 'hover:bg-gray-100'
+                        : 'hover:bg-gray-100 text-[#6C757D]'
+                    }`}
+                aria-label="Notifications"
+            >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                {unreadCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-[#DC3545] text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 animate-pulse">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                )}
+            </button>
+
+            {/* Notification Dropdown */}
+            <AnimatePresence>
+                {showNotifDropdown && (
+                    <>
+                        {/* Backdrop to close dropdown */}
+                        <div
+                            className="fixed inset-0 z-40"
+                            onClick={() => setShowNotifDropdown(false)}
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                            transition={{ duration: 0.15 }}
+                            className={`absolute z-50 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden ${mobile ? 'right-0 top-12 w-80' : 'right-0 top-12 w-80'
+                                }`}
+                        >
+                            {/* Header */}
+                            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                                <div>
+                                    <h3 className="font-bold text-[#343A40] text-sm">Notifications</h3>
+                                    {unreadCount > 0 && (
+                                        <p className="text-xs text-[#6C757D]">{unreadCount} unread</p>
+                                    )}
+                                </div>
+                                {unreadCount > 0 && (
+                                    <button
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            try {
+                                                await fetch('/api/notifications', {
+                                                    method: 'PATCH',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ markAll: true }),
+                                                });
+                                                setRecentNotifications(prev => prev.map(n => ({ ...n, read: true })));
+                                                setUnreadCount(0);
+                                            } catch { /* ignore */ }
+                                        }}
+                                        className="text-xs text-[#007BFF] hover:underline font-medium"
+                                    >
+                                        Mark all read
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Notification List */}
+                            <div className="max-h-80 overflow-y-auto">
+                                {recentNotifications.length === 0 ? (
+                                    <div className="p-6 text-center">
+                                        <div className="text-3xl mb-2">🔔</div>
+                                        <p className="text-sm text-[#6C757D]">No notifications yet</p>
+                                    </div>
+                                ) : (
+                                    recentNotifications.map((notif) => (
+                                        <Link
+                                            href="/notifications"
+                                            key={notif.id}
+                                            onClick={() => setShowNotifDropdown(false)}
+                                            className={`block px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0 ${!notif.read ? 'bg-blue-50/50' : ''
+                                                }`}
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <span className="text-lg mt-0.5">{getNotifIcon(notif.type)}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <p className={`text-sm font-medium truncate ${!notif.read ? 'text-[#343A40]' : 'text-[#6C757D]'
+                                                            }`}>
+                                                            {notif.title}
+                                                        </p>
+                                                        {!notif.read && (
+                                                            <div className="w-2 h-2 rounded-full bg-[#007BFF] flex-shrink-0" />
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-[#6C757D] truncate">{notif.message}</p>
+                                                    <p className="text-[10px] text-[#6C757D] mt-0.5">{formatTimeAgo(notif.timestamp)}</p>
+                                                </div>
+                                            </div>
+                                        </Link>
+                                    ))
+                                )}
+                            </div>
+
+                            {/* Footer */}
+                            <Link
+                                href="/notifications"
+                                onClick={() => setShowNotifDropdown(false)}
+                                className="block p-3 text-center text-sm font-medium text-[#007BFF] hover:bg-gray-50 border-t border-gray-100 transition-colors"
+                            >
+                                View All Notifications →
+                            </Link>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+
     return (
         <div className="min-h-screen bg-[#F8F9FA]">
-
 
             {/* Mobile Header */}
             <header className="lg:hidden bg-white shadow-sm sticky top-0 z-30">
@@ -99,15 +282,20 @@ export default function DashboardLayoutContent({ children }: DashboardLayoutCont
                         <span className="text-lg font-bold text-[#343A40]">VitaVault</span>
                     </Link>
 
-                    <button
-                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                        className="p-2 rounded-lg hover:bg-gray-100"
-                        aria-label="Toggle menu"
-                    >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                        </svg>
-                    </button>
+                    <div className="flex items-center gap-1">
+                        {/* Mobile Notification Bell */}
+                        <NotificationBell mobile />
+
+                        <button
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                            className="p-2 rounded-lg hover:bg-gray-100"
+                            aria-label="Toggle menu"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -115,8 +303,9 @@ export default function DashboardLayoutContent({ children }: DashboardLayoutCont
                 {/* Sidebar */}
                 <aside
                     className={`
-            fixed lg:static inset-y-0 left-0 z-40
+            fixed lg:sticky inset-y-0 left-0 z-40
             w-64 bg-white shadow-lg transform transition-transform duration-300
+            lg:top-0 lg:h-screen lg:overflow-y-auto lg:flex-shrink-0
             ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           `}
                 >
@@ -156,7 +345,7 @@ export default function DashboardLayoutContent({ children }: DashboardLayoutCont
                                             href={item.href}
                                             onClick={() => setIsSidebarOpen(false)}
                                             className={`
-                        flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                        flex items-center gap-3 px-4 py-3 rounded-lg transition-colors relative
                         ${isActive
                                                     ? 'bg-[#007BFF] text-white'
                                                     : 'text-[#6C757D] hover:bg-gray-100'
@@ -165,6 +354,15 @@ export default function DashboardLayoutContent({ children }: DashboardLayoutCont
                                         >
                                             {renderIcon(item.icon)}
                                             <span className="font-medium">{item.label}</span>
+                                            {/* Unread badge on Notifications nav item */}
+                                            {item.icon === 'bell' && unreadCount > 0 && (
+                                                <span className={`ml-auto min-w-[20px] h-[20px] rounded-full text-[10px] font-bold flex items-center justify-center px-1 ${isActive
+                                                        ? 'bg-white text-[#007BFF]'
+                                                        : 'bg-[#DC3545] text-white'
+                                                    }`}>
+                                                    {unreadCount > 9 ? '9+' : unreadCount}
+                                                </span>
+                                            )}
                                         </Link>
                                     </li>
                                 );
@@ -196,6 +394,11 @@ export default function DashboardLayoutContent({ children }: DashboardLayoutCont
 
                 {/* Main Content */}
                 <main className="flex-1 min-h-screen lg:p-8 p-4">
+                    {/* Desktop top bar with notification bell */}
+                    <div className="hidden lg:flex items-center justify-end mb-4 gap-3">
+                        <NotificationBell />
+                    </div>
+
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}

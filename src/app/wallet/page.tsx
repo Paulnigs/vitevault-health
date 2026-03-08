@@ -662,24 +662,41 @@ export default function WalletPage() {
                         );
                     })()}
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <Input
-                            label="Amount (₦)"
-                            type="number"
-                            placeholder="0.00"
-                            value={lockAmount}
-                            onChange={(e) => setLockAmount(e.target.value)}
-                            required
-                        />
-                        <Input
-                            label="Duration (Days)"
-                            type="number"
-                            value={lockDuration}
-                            onChange={(e) => setLockDuration(e.target.value)}
-                            min={1}
-                            required
-                        />
-                    </div>
+                    {(() => {
+                        const selectedParentLocks2 = lockParentId
+                            ? (parents.find(p => p.walletId === lockParentId)?.lockedFunds || [])
+                            : allLockedFunds;
+                        const uniqueMeds2 = Array.from(new Set(selectedParentLocks2.map(l => l.medicationName)));
+                        const isExistingMed = uniqueMeds2.includes(lockMedName);
+
+                        return (
+                            <div className={isExistingMed ? '' : 'grid grid-cols-2 gap-4'}>
+                                <Input
+                                    label="Amount (₦)"
+                                    type="number"
+                                    placeholder="0.00"
+                                    value={lockAmount}
+                                    onChange={(e) => setLockAmount(e.target.value)}
+                                    required
+                                />
+                                {!isExistingMed && (
+                                    <Input
+                                        label="Duration (Days)"
+                                        type="number"
+                                        value={lockDuration}
+                                        onChange={(e) => setLockDuration(e.target.value)}
+                                        min={1}
+                                        required
+                                    />
+                                )}
+                                {isExistingMed && (
+                                    <p className="text-xs text-[#6C757D] mt-1">
+                                        Duration uses the existing lock&apos;s schedule — no need to set again.
+                                    </p>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                         <p className="text-xs text-amber-800">

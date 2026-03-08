@@ -36,7 +36,39 @@ export async function GET(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         );
 
+        // Calculate locked funds total and available balance
+        const walletObj = wallet.toObject({ virtuals: true });
+
         return NextResponse.json({
+            wallet: {
+                id: wallet._id,
+                balance: wallet.balance,
+                availableBalance: walletObj.availableBalance,
+                currency: wallet.currency,
+                owner: typeof wallet.owner === 'object' && wallet.owner._id
+                    ? wallet.owner._id.toString()
+                    : wallet.owner.toString(),
+                transactions: sortedTransactions.map((t: any) => ({
+                    id: t._id?.toString() || t.id,
+                    amount: t.amount,
+                    type: t.type,
+                    date: t.date,
+                    description: t.description,
+                    schedule: t.schedule,
+                })),
+                lockedFunds: (wallet.lockedFunds || []).map((lf: any) => ({
+                    _id: lf._id.toString(),
+                    medicationName: lf.medicationName,
+                    amount: lf.amount,
+                    lockedAt: lf.lockedAt,
+                    unlocksAt: lf.unlocksAt,
+                    isActive: lf.isActive,
+                })),
+                scheduledDeposits: wallet.scheduledDeposits.filter((d) => d.isActive),
+                createdAt: wallet.createdAt,
+                updatedAt: wallet.updatedAt,
+            },
+            // Also keep top-level fields for backward compatibility
             id: wallet._id,
             balance: wallet.balance,
             currency: wallet.currency,
