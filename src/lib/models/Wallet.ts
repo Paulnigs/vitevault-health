@@ -40,6 +40,8 @@ export interface IWallet extends Document {
     }[];
     createdAt: Date;
     updatedAt: Date;
+    // Virtual property: Total balance minus active locked funds
+    readonly availableBalance?: number;
 }
 
 const TransactionSchema = new Schema<ITransaction>({
