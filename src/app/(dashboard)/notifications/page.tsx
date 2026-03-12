@@ -350,7 +350,7 @@ export default function NotificationsPage() {
                                                 <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
                                             </div>
                                             {!notification.read && (
-                                                <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-2" />
+                                                <div className="w-2 h-2 rounded-full bg-primary shrink-0 mt-2" />
                                             )}
                                         </div>
                                     </Card>

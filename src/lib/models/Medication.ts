@@ -24,6 +24,9 @@ export interface IMedication extends Document {
     updatedAt: Date;
     // Virtual
     countdownDays?: number;
+    // Methods
+    consumeDaily(): number;
+    refill(): void;
 }
 
 const MedicationSchema = new Schema<IMedication>(

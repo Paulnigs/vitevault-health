@@ -197,7 +197,7 @@ export default function WalletPage() {
                     animate={{ opacity: 1, y: 0 }}
                 >
                     <div className="grid md:grid-cols-2 gap-4">
-                        <Card className="p-6 bg-gradient-to-r from-primary to-secondary text-white relative overflow-hidden">
+                        <Card className="p-6 bg-linear-to-r from-primary to-secondary text-white relative overflow-hidden">
                             <div className="relative z-10">
                                 <p className="text-sm opacity-80 mb-1">Available Balance</p>
                                 <h1 className="text-4xl font-bold mb-2">

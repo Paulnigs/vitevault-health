@@ -168,7 +168,7 @@ export default function ProfilePage() {
                 >
                     <Card className="p-6 mb-6">
                         <div className="flex items-center gap-6">
-                            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-3xl font-bold shadow-lg">
+                            <div className="w-20 h-20 rounded-full bg-linear-to-br from-primary to-secondary flex items-center justify-center text-white text-3xl font-bold shadow-lg">
                                 {profile?.name?.charAt(0) || profile?.email?.charAt(0)?.toUpperCase() || '?'}
                             </div>
                             <div className="flex-1">
