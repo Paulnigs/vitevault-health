@@ -295,18 +295,27 @@ export default function WalletPage() {
                         </div>
 
                         {totalBalance > 0 && (
-                            <div>
-                                <div className="flex justify-between text-xs opacity-70 mb-1">
-                                    <span>Locked: {lockedPercent}%</span>
+                            <div className="mt-6">
+                                <div className="flex justify-between text-xs opacity-80 mb-2 font-medium">
                                     <span>Available: {100 - lockedPercent}%</span>
+                                    <span>Locked: {lockedPercent}%</span>
                                 </div>
-                                <div className="w-full h-3 bg-white/20 rounded-full overflow-hidden">
+                                <div className="w-full h-3 flex bg-white/20 rounded-full overflow-hidden">
                                     <div
-                                        className="h-full rounded-full transition-all duration-700 ease-out"
+                                        className="h-full transition-all duration-700 ease-out"
                                         style={{
                                             width: `${100 - lockedPercent}%`,
                                             background: 'linear-gradient(90deg, #34d399, #10b981)',
                                         }}
+                                        title={`Available: ₦${totalAvailable.toLocaleString()}`}
+                                    />
+                                    <div
+                                        className="h-full transition-all duration-700 ease-out"
+                                        style={{
+                                            width: `${lockedPercent}%`,
+                                            background: 'linear-gradient(90deg, #fbbf24, #f59e0b)',
+                                        }}
+                                        title={`Locked: ₦${totalLocked.toLocaleString()}`}
                                     />
                                 </div>
                             </div>

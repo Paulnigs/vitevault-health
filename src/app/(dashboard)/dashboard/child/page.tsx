@@ -354,17 +354,19 @@ export default function ChildDashboard() {
                 </div>
                 {/* Lock Funds Button on Dashboard */}
                 {parentsWithWallet.length > 0 && (
-                    <button
-                        onClick={() => {
-                            if (parentsWithWallet.length === 1) {
-                                setLockParentId(parentsWithWallet[0].walletId!);
-                            }
-                            setIsLockModalOpen(true);
-                        }}
-                        className="mt-4 w-full py-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white font-medium rounded-xl transition-all flex items-center justify-center gap-2 text-sm border border-white/20"
-                    >
-                        🔒 Lock Funds
-                    </button>
+                    <div className="flex justify-start mt-4">
+                        <button
+                            onClick={() => {
+                                if (parentsWithWallet.length === 1) {
+                                    setLockParentId(parentsWithWallet[0].walletId!);
+                                }
+                                setIsLockModalOpen(true);
+                            }}
+                            className="px-6 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white font-medium rounded-xl transition-all flex items-center justify-center gap-2 text-sm border border-white/20"
+                        >
+                            🔒 Lock Funds
+                        </button>
+                    </div>
                 )}
             </div>
 

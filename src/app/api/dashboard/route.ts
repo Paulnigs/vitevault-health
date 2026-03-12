@@ -4,6 +4,16 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import { User, Wallet, Medication } from '@/lib/models';
 
+// Helper: calculate days remaining from countdownEndDate or qty
+function getDaysRemaining(med: { countdownEndDate?: Date; remainingQty: number; usageRate: number }) {
+    if (med.countdownEndDate) {
+        const msLeft = new Date(med.countdownEndDate).getTime() - Date.now();
+        if (msLeft <= 0) return 0;
+        return Math.floor(msLeft / (1000 * 60 * 60 * 24));
+    }
+    return med.usageRate > 0 ? Math.floor(med.remainingQty / med.usageRate) : 999;
+}
+
 export async function GET() {
     try {
         const session = await getServerSession(authOptions);
@@ -99,10 +109,12 @@ export async function GET() {
             dashboardData.medications = medications.map((med) => ({
                 id: med._id.toString(),
                 name: med.name,
-                daysRemaining: med.usageRate > 0 ? Math.floor(med.remainingQty / med.usageRate) : 999,
+                daysRemaining: getDaysRemaining(med),
                 totalDays: med.usageRate > 0 ? Math.floor(med.totalQty / med.usageRate) : 30,
                 refillCost: med.refillCost,
                 remainingQty: med.remainingQty,
+                refillStatus: med.refillStatus || 'none',
+                countdownEndDate: med.countdownEndDate?.toISOString() || null,
             }));
 
             dashboardData.children = children.map((child) => ({
@@ -161,8 +173,9 @@ export async function GET() {
                         medications: medications.map((med) => ({
                             id: med._id.toString(),
                             name: med.name,
-                            daysRemaining: med.usageRate > 0 ? Math.floor(med.remainingQty / med.usageRate) : 999,
+                            daysRemaining: getDaysRemaining(med),
                             totalDays: med.usageRate > 0 ? Math.floor(med.totalQty / med.usageRate) : 30,
+                            countdownEndDate: med.countdownEndDate?.toISOString() || null,
                         })),
                     };
                 })
@@ -200,43 +213,48 @@ export async function GET() {
             const patients = await User.find({
                 _id: { $in: user.links || [] },
                 role: 'parent',
-            }).select('name email avatar');
+            }).select('name email avatar linkCode');
 
             const patientsWithData = await Promise.all(
                 patients.map(async (patient) => {
                     const wallet = await Wallet.findOne({ owner: patient._id });
+                    // Show ALL active medications for connected patients (not filtered by pharmacyId)
                     const medications = wallet
                         ? await Medication.find({
                             walletId: wallet._id,
                             isActive: true,
-                            pharmacyId: user._id,
                         })
                         : [];
 
                     return {
                         id: patient._id.toString(),
                         name: patient.name,
+                        linkCode: patient.linkCode,
                         walletBalance: wallet?.balance || 0,
                         medications: medications.map((med) => ({
                             id: med._id.toString(),
                             name: med.name,
-                            daysRemaining: med.usageRate > 0 ? Math.floor(med.remainingQty / med.usageRate) : 999,
+                            daysRemaining: getDaysRemaining(med),
+                            totalDays: med.usageRate > 0 ? Math.floor(med.totalQty / med.usageRate) : 30,
                             refillCost: med.refillCost,
-                            status: med.remainingQty <= 0 ? 'pending' : 'none',
+                            status: med.refillStatus === 'requested' ? 'pending' : med.remainingQty <= 0 ? 'depleted' : 'active',
+                            refillStatus: med.refillStatus || 'none',
+                            countdownEndDate: med.countdownEndDate?.toISOString() || null,
                         })),
                     };
                 })
             );
 
-            // Get pending refills (medications with 0 days remaining)
+            // Get pending refills — medications with refillStatus === 'requested'
             const pendingRefills = patientsWithData.flatMap((patient) =>
                 patient.medications
-                    .filter((med) => med.daysRemaining <= 0)
+                    .filter((med) => med.refillStatus === 'requested')
                     .map((med) => ({
                         id: med.id,
                         patient: patient.name,
                         medication: med.name,
                         amount: med.refillCost,
+                        refillStatus: med.refillStatus,
                     }))
             );
 
@@ -253,3 +271,4 @@ export async function GET() {
         );
     }
 }
+

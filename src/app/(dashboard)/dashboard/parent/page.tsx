@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { useRealtime } from '@/hooks/useRealtime';
 import DepositModal from '@/components/DepositModal';
+import FastForwardButton from '@/components/FastForwardButton';
 
 interface Medication {
     id: string;
@@ -17,6 +18,8 @@ interface Medication {
     totalDays: number;
     refillCost: number;
     remainingQty: number;
+    refillStatus: 'none' | 'requested' | 'approved';
+    countdownEndDate: string | null;
 }
 
 interface Child {
@@ -70,6 +73,7 @@ export default function ParentDashboard() {
     const [loading, setLoading] = useState(true);
     const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+    const [refillLoading, setRefillLoading] = useState<string | null>(null);
 
     // Setup real-time updates
     useRealtime({
@@ -269,22 +273,56 @@ export default function ParentDashboard() {
                                             daysRemaining={med.daysRemaining}
                                             totalDays={med.totalDays}
                                             size="md"
+                                            countdownEndDate={med.countdownEndDate}
                                         />
 
                                         <h3 className="font-bold text-[#343A40] mt-4">{med.name}</h3>
-                                        <p className="text-sm text-[#6C757D] mb-4">
+                                        <p className="text-sm text-[#6C757D] mb-2">
                                             Refill cost: ₦{med.refillCost.toLocaleString()}
                                         </p>
 
-                                        {/* Refill request - check pharmacy connection */}
-                                        {med.daysRemaining <= 3 && (
-                                            <div className="w-full">
+                                        {/* Refill status badge */}
+                                        {med.refillStatus === 'requested' && (
+                                            <div className="mb-3 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                                                ⏳ Refill Pending (awaiting pharmacy)
+                                            </div>
+                                        )}
+                                        {med.refillStatus === 'approved' && (
+                                            <div className="mb-3 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                                                ✅ Refill Approved
+                                            </div>
+                                        )}
+
+                                        {/* Refill request button */}
+                                        {med.daysRemaining <= 3 && med.refillStatus === 'none' && (
+                                            <div className="w-full mb-2">
                                                 {pharmacies.length > 0 ? (
                                                     <Button
                                                         variant="secondary"
                                                         size="sm"
                                                         className="w-full"
-                                                        onClick={() => toast.success(`Refill request sent to ${pharmacies[0].name}!`)}
+                                                        isLoading={refillLoading === med.id}
+                                                        onClick={async () => {
+                                                            setRefillLoading(med.id);
+                                                            try {
+                                                                const res = await fetch('/api/medication/refill-request', {
+                                                                    method: 'POST',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({ medicationId: med.id }),
+                                                                });
+                                                                const data = await res.json();
+                                                                if (res.ok) {
+                                                                    toast.success(data.message || `Refill request sent!`);
+                                                                    fetchDashboardData();
+                                                                } else {
+                                                                    toast.error(data.error || 'Failed to send refill request');
+                                                                }
+                                                            } catch {
+                                                                toast.error('Network error');
+                                                            } finally {
+                                                                setRefillLoading(null);
+                                                            }
+                                                        }}
                                                     >
                                                         💊 Request Refill
                                                     </Button>
@@ -298,6 +336,17 @@ export default function ParentDashboard() {
                                                 )}
                                             </div>
                                         )}
+
+                                        {/* Simulation: Fast Forward for testing */}
+                                        <div className="w-full flex justify-center">
+                                            <FastForwardButton
+                                                medicationId={med.id}
+                                                medicationName={med.name}
+                                                currentDays={med.daysRemaining}
+                                                refillCost={med.refillCost}
+                                                onUpdate={() => fetchDashboardData()}
+                                            />
+                                        </div>
                                     </div>
                                 </Card>
                             </motion.div>
@@ -402,8 +451,8 @@ export default function ParentDashboard() {
                                     {/* Timeline dot */}
                                     <div
                                         className={`absolute left-2.5 w-3 h-3 rounded-full ${activity.type === 'deposit'
-                                                ? 'bg-[#28A745]'
-                                                : 'bg-[#DC3545]'
+                                            ? 'bg-[#28A745]'
+                                            : 'bg-[#DC3545]'
                                             }`}
                                     />
 

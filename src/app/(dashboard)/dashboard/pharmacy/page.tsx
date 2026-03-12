@@ -13,13 +13,17 @@ interface Medication {
     id: string;
     name: string;
     daysRemaining: number;
+    totalDays: number;
     refillCost: number;
     status: string;
+    refillStatus: string;
+    countdownEndDate: string | null;
 }
 
 interface Patient {
     id: string;
     name: string;
+    linkCode?: string;
     walletBalance: number;
     medications: Medication[];
 }
@@ -29,6 +33,7 @@ interface PendingRefill {
     patient: string;
     medication: string;
     amount: number;
+    refillStatus: string;
 }
 
 interface DashboardData {
@@ -90,13 +95,11 @@ export default function PharmacyDashboard() {
         setProcessingId(id);
 
         try {
-            // Simulate refill approval (in production, this would trigger the actual deduction)
-            const response = await fetch('/api/simulate-deduction', {
+            const response = await fetch('/api/medication/refill-approve', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     medicationId: id,
-                    daysToSimulate: 0, // Just trigger the refill without advancing days
                 }),
             });
 
@@ -106,7 +109,11 @@ export default function PharmacyDashboard() {
                 throw new Error(data.error || 'Approval failed');
             }
 
-            toast.success(`Refill approved for ${patient}'s ${medication}! 💊`);
+            if (response.status === 402) {
+                toast.error(`Insufficient balance for ${patient}'s ${medication} refill.`);
+            } else {
+                toast.success(`Refill approved for ${patient}'s ${medication}! 💊`);
+            }
 
             // Refresh dashboard data
             fetchDashboardData();
@@ -137,6 +144,9 @@ export default function PharmacyDashboard() {
     const patients = dashboardData?.patients || [];
     const pendingRefills = dashboardData?.pendingRefills || [];
     const totalMedications = patients.reduce((sum, p) => sum + p.medications.length, 0);
+    const activeMedications = patients.reduce(
+        (sum, p) => sum + p.medications.filter(m => m.status === 'active').length, 0
+    );
 
     return (
         <div>
@@ -199,11 +209,11 @@ export default function PharmacyDashboard() {
                 </Card>
                 <Card className="text-center">
                     <p className="text-[#6C757D] text-sm mb-1">Active Medications</p>
-                    <p className="text-3xl font-bold text-[#28A745]">{totalMedications}</p>
+                    <p className="text-3xl font-bold text-[#28A745]">{activeMedications}</p>
                 </Card>
                 <Card className="text-center">
-                    <p className="text-[#6C757D] text-sm mb-1">Your Link Code</p>
-                    <p className="text-lg font-mono font-bold text-[#343A40]">{dashboardData?.user?.linkCode}</p>
+                    <p className="text-[#6C757D] text-sm mb-1">Total Medications</p>
+                    <p className="text-3xl font-bold text-[#343A40]">{totalMedications}</p>
                 </Card>
             </div>
 
@@ -237,6 +247,9 @@ export default function PharmacyDashboard() {
                                         <div>
                                             <p className="font-bold text-[#343A40]">{item.patient}</p>
                                             <p className="text-sm text-[#6C757D]">{item.medication}</p>
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 mt-1">
+                                                ⏳ Awaiting Approval
+                                            </span>
                                         </div>
                                     </div>
 
@@ -250,7 +263,7 @@ export default function PharmacyDashboard() {
                                             isLoading={processingId === item.id}
                                             onClick={() => handleApprove(item.id, item.patient, item.medication)}
                                         >
-                                            Approve
+                                            ✅ Approve Refill
                                         </Button>
                                     </div>
                                 </Card>
@@ -260,10 +273,10 @@ export default function PharmacyDashboard() {
                 )}
             </div>
 
-            {/* Connected Patients */}
+            {/* Connected Patients with Active Medications */}
             <div>
                 <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold text-[#343A40]">Connected Patients</h2>
+                    <h2 className="text-xl font-bold text-[#343A40]">Connected Patients & Medications</h2>
                     <Link href="/connections">
                         <Button variant="outline" size="sm">
                             Manage Connections
@@ -285,91 +298,87 @@ export default function PharmacyDashboard() {
                         </Link>
                     </Card>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead>
-                                <tr className="border-b border-gray-200">
-                                    <th className="text-left py-3 px-4 text-[#6C757D] font-medium">Patient</th>
-                                    <th className="text-left py-3 px-4 text-[#6C757D] font-medium">Medications</th>
-                                    <th className="text-left py-3 px-4 text-[#6C757D] font-medium">Status</th>
-                                    <th className="text-right py-3 px-4 text-[#6C757D] font-medium">Balance</th>
-                                    <th className="text-right py-3 px-4 text-[#6C757D] font-medium">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {patients.map((patient) => (
-                                    <tr key={patient.id} className="border-b border-gray-100 hover:bg-gray-50">
-                                        <td className="py-4 px-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 bg-[#007BFF]/10 rounded-full flex items-center justify-center">
-                                                    <span className="text-[#007BFF] font-bold">{patient.name.charAt(0)}</span>
-                                                </div>
-                                                <span className="font-medium text-[#343A40]">{patient.name}</span>
-                                            </div>
-                                        </td>
-                                        <td className="py-4 px-4">
-                                            {patient.medications.length === 0 ? (
-                                                <span className="text-sm text-[#6C757D]">No medications</span>
-                                            ) : (
-                                                <div className="space-y-1">
-                                                    {patient.medications.map((med, i) => (
-                                                        <div key={i} className="flex items-center gap-2">
-                                                            <CountdownTimer
-                                                                daysRemaining={med.daysRemaining}
-                                                                totalDays={30}
-                                                                size="sm"
-                                                                showLabel={false}
-                                                            />
-                                                            <span className="text-sm text-[#343A40]">{med.name}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="py-4 px-4">
-                                            {patient.medications.some((m) => m.daysRemaining <= 3) ? (
-                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#FFC107]/10 text-[#FFC107]">
-                                                    Refill Soon
-                                                </span>
-                                            ) : patient.medications.length > 0 ? (
-                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#28A745]/10 text-[#28A745]">
-                                                    Healthy
-                                                </span>
-                                            ) : (
-                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
-                                                    No Meds
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="py-4 px-4 text-right">
-                                            <span className="font-bold text-[#28A745]">
-                                                ₦{patient.walletBalance.toLocaleString()}
+                    <div className="space-y-4">
+                        {patients.map((patient) => (
+                            <Card key={patient.id}>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-12 h-12 bg-[#007BFF]/10 rounded-full flex items-center justify-center">
+                                            <span className="text-[#007BFF] font-bold text-lg">{patient.name.charAt(0)}</span>
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-[#343A40]">{patient.name}</p>
+                                            <p className="text-xs text-[#6C757D]">
+                                                Balance: <span className="font-semibold text-[#28A745]">₦{patient.walletBalance.toLocaleString()}</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {patient.medications.some(m => m.refillStatus === 'requested') && (
+                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                                ⏳ Pending Refill
                                             </span>
-                                        </td>
-                                        <td className="py-4 px-4 text-right">
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => {
-                                                    // We need the link code for this patient. The dashboard currently doesn't provide it directly in the patient object.
-                                                    // We might need to update the API to include linkCode for linked patients, or we can prompt the user.
-                                                    // For now, let's assume we can get it or we prompt.
-                                                    // Actually, 'patient' here is from 'dashboardData.patients'. Let's check the API response structure.
-                                                    // The API returns id, name, walletBalance, medications. No linkCode.
-                                                    // Let's prompt or leave blank. Or better, update API.
-                                                    // For this iteration, let's just open the modal blank or with name hint? 
-                                                    // Correction: We can't pre-fill linkCode if we don't have it.
-                                                    // Let's just open modal.
-                                                    setShowPaymentModal(true);
-                                                }}
+                                        )}
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                                setPrefilledPayment({
+                                                    linkCode: patient.linkCode || '',
+                                                    medication: '',
+                                                    amount: 0,
+                                                });
+                                                setShowPaymentModal(true);
+                                            }}
+                                        >
+                                            💳 Charge
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* Active Medications Grid */}
+                                {patient.medications.length === 0 ? (
+                                    <div className="text-center py-4 bg-gray-50 rounded-xl">
+                                        <p className="text-sm text-[#6C757D]">No active medications</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                        {patient.medications.map((med) => (
+                                            <div
+                                                key={med.id}
+                                                className="bg-gray-50 rounded-xl p-3 border border-gray-100"
                                             >
-                                                Charge
-                                            </Button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                                <div className="flex flex-col items-center text-center">
+                                                    <CountdownTimer
+                                                        daysRemaining={med.daysRemaining}
+                                                        totalDays={med.totalDays}
+                                                        size="sm"
+                                                        showLabel={false}
+                                                        countdownEndDate={med.countdownEndDate}
+                                                    />
+                                                    <p className="text-xs font-semibold text-[#343A40] mt-2">{med.name}</p>
+                                                    <p className="text-[10px] text-[#6C757D]">₦{med.refillCost.toLocaleString()}</p>
+                                                    {/* Status badge */}
+                                                    {med.refillStatus === 'requested' ? (
+                                                        <span className="mt-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800">
+                                                            ⏳ Pending
+                                                        </span>
+                                                    ) : med.status === 'active' ? (
+                                                        <span className="mt-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-700">
+                                                            ✓ Active
+                                                        </span>
+                                                    ) : (
+                                                        <span className="mt-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
+                                                            ⚠ Depleted
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </Card>
+                        ))}
                     </div>
                 )}
             </div>
