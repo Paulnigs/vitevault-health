@@ -100,6 +100,29 @@ export default function MedicationsPage() {
         setShowAddModal(true);
     };
 
+    const handleDeleteMedication = async (medicationId: string) => {
+        if (!confirm('Are you sure you want to delete this medication? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/medication/${medicationId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+            if (res.ok) {
+                showSuccess('Medication deleted successfully');
+                fetchMedications();
+            } else {
+                const data = await res.json();
+                showError(data.error || 'Failed to delete medication');
+            }
+        } catch {
+            showError('Network error. Please try again.');
+        }
+    };
+
     const handleCountdownUpdate = (medId: string, newDays: number) => {
         setMedications((prev) =>
             prev.map((m) => (m._id === medId ? { ...m, countdownDays: newDays } : m))
@@ -170,9 +193,9 @@ export default function MedicationsPage() {
                                 </svg>
                             </div>
                             <h3 className="text-lg font-semibold text-slate-900 mb-2">No medications yet</h3>
-                            <p className="mb-4">Add your first medication to start tracking refill countdowns</p>
+                            <p className="mb-4">Add a new medication to start tracking refill countdowns</p>
                             <Button variant="primary" onClick={() => setShowAddModal(true)}>
-                                Add Your First Medication
+                                Add a New Medication
                             </Button>
                         </Card>
                     </motion.div>
@@ -245,6 +268,14 @@ export default function MedicationsPage() {
                                                 refillCost={med.refillCost}
                                                 onUpdate={(newDays) => handleCountdownUpdate(med._id, newDays)}
                                             />
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
+                                                onClick={() => handleDeleteMedication(med._id)}
+                                            >
+                                                🗑️ Delete
+                                            </Button>
                                         </div>
                                     </Card>
                                 </motion.div>

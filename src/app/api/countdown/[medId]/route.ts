@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import { Medication } from '@/lib/models';
+import { Medications } from '@/lib/indexedDB';
 
 export async function GET(
     request: NextRequest,
@@ -20,9 +19,7 @@ export async function GET(
 
         const { medId } = await params;
 
-        await dbConnect();
-
-        const medication = await Medication.findById(medId);
+        const medication = Medications.findById(medId);
 
         if (!medication) {
             return NextResponse.json(
@@ -31,9 +28,7 @@ export async function GET(
             );
         }
 
-        const countdownDays = medication.usageRate > 0
-            ? Math.floor(medication.remainingQty / medication.usageRate)
-            : 999;
+        const countdownDays = Medications.getDaysRemaining(medication);
 
         return NextResponse.json({
             id: medication._id,
@@ -42,6 +37,8 @@ export async function GET(
             totalQty: medication.totalQty,
             usageRate: medication.usageRate,
             countdownDays,
+            countdownEndDate: medication.countdownEndDate || null,
+            countdownActive: medication.countdownActive,
             status: countdownDays <= 0 ? 'refill_needed' : countdownDays <= 3 ? 'low' : 'ok',
         });
     } catch (error) {

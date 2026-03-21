@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import { User, Medication, Wallet, Notification } from '@/lib/models';
+import { Users, Wallets, Medications, Notifications } from '@/lib/indexedDB';
 
 export async function POST(request: NextRequest) {
     try {
@@ -25,9 +24,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        await dbConnect();
-
-        const medication = await Medication.findById(medicationId);
+        const medication = Medications.findById(medicationId);
 
         if (!medication) {
             return NextResponse.json(
@@ -36,7 +33,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (medication.refillStatus === 'requested') {
+        if (medication.refillStatus === 'pending_approval') {
             return NextResponse.json(
                 { error: 'Refill already requested for this medication' },
                 { status: 400 }
@@ -44,7 +41,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Get the wallet to find the parent
-        const wallet = await Wallet.findById(medication.walletId);
+        const wallet = Wallets.findById(medication.walletId);
         if (!wallet) {
             return NextResponse.json(
                 { error: 'Associated wallet not found' },
@@ -53,7 +50,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Get the parent user (wallet owner)
-        const parent = await User.findById(wallet.owner);
+        const parent = Users.findById(wallet.owner);
         if (!parent) {
             return NextResponse.json(
                 { error: 'Parent user not found' },
@@ -62,10 +59,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Find connected pharmacies
-        const pharmacies = await User.find({
-            _id: { $in: parent.links || [] },
-            role: 'pharmacy',
-        });
+        const pharmacies = Users.findByIdsAndRole(parent.links || [], 'pharmacy');
 
         if (pharmacies.length === 0) {
             return NextResponse.json(
@@ -75,23 +69,20 @@ export async function POST(request: NextRequest) {
         }
 
         // Update medication refill status
-        medication.refillStatus = 'requested';
-        medication.refillRequestedAt = new Date();
-        medication.refillRequestedBy = parent._id;
+        const targetPharmacy = medication.pharmacyId
+            ? (pharmacies.find(p => p._id === medication.pharmacyId) || pharmacies[0])
+            : pharmacies[0];
 
-        // If there's a pharmacyId on the medication, use that; otherwise use first connected pharmacy
-        if (!medication.pharmacyId && pharmacies.length > 0) {
-            medication.pharmacyId = pharmacies[0]._id;
-        }
-
-        await medication.save();
+        Medications.update(medicationId, {
+            refillStatus: 'pending_approval',
+            refillRequestedAt: new Date().toISOString(),
+            refillRequestedBy: parent._id,
+            pharmacyId: targetPharmacy._id,
+            countdownActive: false,
+        });
 
         // Create notification for the pharmacy
-        const targetPharmacy = pharmacies.find(
-            p => medication.pharmacyId && p._id.toString() === medication.pharmacyId.toString()
-        ) || pharmacies[0];
-
-        await Notification.create({
+        Notifications.create({
             userId: targetPharmacy._id,
             type: 'refill',
             title: 'New Refill Request',
@@ -106,7 +97,7 @@ export async function POST(request: NextRequest) {
         });
 
         // Also notify the parent
-        await Notification.create({
+        Notifications.create({
             userId: parent._id,
             type: 'refill',
             title: 'Refill Request Sent',
@@ -123,7 +114,7 @@ export async function POST(request: NextRequest) {
             medication: {
                 id: medication._id,
                 name: medication.name,
-                refillStatus: medication.refillStatus,
+                refillStatus: 'pending_approval',
             },
         });
     } catch (error) {

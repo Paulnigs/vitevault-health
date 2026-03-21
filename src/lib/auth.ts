@@ -1,8 +1,7 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
-import dbConnect from '@/lib/db';
-import { User } from '@/lib/models';
+import { Users, Wallets } from '@/lib/indexedDB';
 
 export const authOptions: NextAuthOptions = {
     providers: [
@@ -17,9 +16,7 @@ export const authOptions: NextAuthOptions = {
                     throw new Error('Please provide email and password');
                 }
 
-                await dbConnect();
-
-                const user = await User.findOne({ email: credentials.email.toLowerCase() });
+                const user = Users.findByEmail(credentials.email);
 
                 if (!user) {
                     throw new Error('No user found with this email');
@@ -31,12 +28,20 @@ export const authOptions: NextAuthOptions = {
                     throw new Error('Invalid password');
                 }
 
+                // Get wallet ID if parent
+                let walletId: string | undefined;
+                if (user.role === 'parent') {
+                    const wallet = Wallets.findByOwner(user._id);
+                    walletId = wallet?._id;
+                }
+
                 return {
-                    id: user._id.toString(),
+                    id: user._id,
                     email: user.email,
                     name: user.name,
                     role: user.role,
                     linkCode: user.linkCode,
+                    walletId,
                 };
             },
         }),
@@ -67,5 +72,5 @@ export const authOptions: NextAuthOptions = {
         signIn: '/login',
         error: '/login',
     },
-    secret: process.env.NEXTAUTH_SECRET,
+    secret: process.env.NEXTAUTH_SECRET || 'vitavault-offline-secret-key-2024',
 };

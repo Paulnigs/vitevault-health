@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import { Notification } from '@/lib/models';
+import { Notifications } from '@/lib/indexedDB';
 
 export async function GET(request: NextRequest) {
     try {
@@ -15,21 +14,11 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        await dbConnect();
-
-        // Get query parameters
         const url = new URL(request.url);
         const limit = parseInt(url.searchParams.get('limit') || '50');
         const unreadOnly = url.searchParams.get('unread') === 'true';
 
-        const query: Record<string, unknown> = { userId: session.user.id };
-        if (unreadOnly) {
-            query.read = false;
-        }
-
-        const notifications = await Notification.find(query)
-            .sort({ createdAt: -1 })
-            .limit(limit);
+        const notifications = Notifications.findByUserId(session.user.id, limit, unreadOnly);
 
         return NextResponse.json({ notifications });
     } catch (error) {
@@ -55,21 +44,13 @@ export async function PATCH(request: NextRequest) {
         const body = await request.json();
         const { notificationIds, markAll } = body;
 
-        await dbConnect();
-
         if (markAll) {
-            await Notification.updateMany(
-                { userId: session.user.id, read: false },
-                { $set: { read: true } }
-            );
+            Notifications.markAllRead(session.user.id);
             return NextResponse.json({ message: 'All notifications marked as read' });
         }
 
         if (notificationIds && Array.isArray(notificationIds)) {
-            await Notification.updateMany(
-                { _id: { $in: notificationIds }, userId: session.user.id },
-                { $set: { read: true } }
-            );
+            Notifications.markRead(notificationIds, session.user.id);
             return NextResponse.json({ message: 'Notifications marked as read' });
         }
 
@@ -86,7 +67,3 @@ export async function PATCH(request: NextRequest) {
         );
     }
 }
-
-// Function to easily create notifications from other APIs (internal use)
-// This isn't an export for the route, but a helper if we were in the same file.
-// Since we are not, code in other files should import Notification model directly.

@@ -1,0 +1,381 @@
+{
+  "users": [
+    {
+      "_id": "mmxo0zcs1kg3n4ui",
+      "email": "paulnigsade@gmail.com",
+      "passwordHash": "$2b$12$iFo0CZds/Kqv92ScTvd5iOqMIc0JuUqBbLc28j9Uu4RHJ8I8CY28i",
+      "name": "Paul Smith",
+      "role": "parent",
+      "links": [
+        "mmxo59hq03ikxkg5",
+        "mmxoe2tyswnmel14"
+      ],
+      "linkCode": "0DTVX0",
+      "notifications": {
+        "refillReminders": true,
+        "depositAlerts": true,
+        "connectionRequests": true,
+        "emailNotifications": false
+      },
+      "createdAt": "2026-03-19T16:09:21.916Z",
+      "updatedAt": "2026-03-19T16:20:21.294Z",
+      "walletId": "mmxo0zcvsiwl7j0v"
+    },
+    {
+      "_id": "mmxo59hq03ikxkg5",
+      "email": "pauloadesiyan@gmail.com",
+      "passwordHash": "$2b$12$PYHwse.pMUOlxyofL5PSr.Zfj0TehNS8aL.As2mMrI0y/rECH.Gti",
+      "name": "John Smith",
+      "role": "child",
+      "links": [
+        "mmxo0zcs1kg3n4ui"
+      ],
+      "linkCode": "B826KF",
+      "notifications": {
+        "refillReminders": true,
+        "depositAlerts": true,
+        "connectionRequests": true,
+        "emailNotifications": false
+      },
+      "createdAt": "2026-03-19T16:12:41.678Z",
+      "updatedAt": "2026-03-19T16:13:13.379Z"
+    },
+    {
+      "_id": "mmxoe2tyswnmel14",
+      "email": "brightisaac042@gmail.com",
+      "passwordHash": "$2b$12$D6twsu/gAQFxNw60lyQLFOz2QifL8OfhE01Fxl1ycGgjz0LcLFX8e",
+      "name": "Sanjesh Nabeel",
+      "role": "pharmacy",
+      "links": [
+        "mmxo0zcs1kg3n4ui"
+      ],
+      "linkCode": "ES5LDF",
+      "notifications": {
+        "refillReminders": true,
+        "depositAlerts": true,
+        "connectionRequests": true,
+        "emailNotifications": false
+      },
+      "createdAt": "2026-03-19T16:19:32.950Z",
+      "updatedAt": "2026-03-19T16:20:21.280Z"
+    }
+  ],
+  "wallets": [
+    {
+      "_id": "mmxo0zcvsiwl7j0v",
+      "owner": "mmxo0zcs1kg3n4ui",
+      "balance": 11000,
+      "currency": "NGN",
+      "transactions": [
+        {
+          "_id": "mmxo7nj64bz149xo",
+          "amount": 5000,
+          "type": "deposit",
+          "description": "Deposit via VISA ending in 1111",
+          "date": "2026-03-19T16:14:33.186Z",
+          "schedule": "one-time",
+          "fromUserId": "mmxo59hq03ikxkg5"
+        },
+        {
+          "_id": "mmxom9rw9uiwm11h",
+          "amount": 2000,
+          "type": "deduction",
+          "description": "Withdrawal to GTBank (0210818922)",
+          "date": "2026-03-19T16:25:55.197Z",
+          "schedule": "one-time",
+          "fromUserId": "mmxo0zcs1kg3n4ui"
+        },
+        {
+          "_id": "mmxvg474rcp9c55o",
+          "amount": 10000,
+          "type": "deposit",
+          "description": "Deposit via VISA ending in 1111",
+          "date": "2026-03-19T19:37:05.344Z",
+          "schedule": "one-time",
+          "fromUserId": "mmxo59hq03ikxkg5"
+        },
+        {
+          "_id": "mmxx2g2ps0o4chpp",
+          "amount": 5000,
+          "type": "deposit",
+          "description": "Deposit via VISA ending in 4242",
+          "date": "2026-03-19T20:22:26.785Z",
+          "schedule": "one-time",
+          "fromUserId": "mmxo0zcs1kg3n4ui"
+        },
+        {
+          "_id": "mmxx842in2a2ttfa",
+          "amount": 5000,
+          "type": "deduction",
+          "description": "Pharmacy Payment: Insulin (from Locked Funds)",
+          "date": "2026-03-19T20:26:51.162Z",
+          "schedule": "one-time",
+          "fromUserId": "mmxoe2tyswnmel14"
+        },
+        {
+          "_id": "mmyz8qp6m7lok7ku",
+          "amount": 2000,
+          "type": "deduction",
+          "description": "Pharmacy Payment: Paracetamol (from Locked Funds)",
+          "date": "2026-03-20T14:11:05.898Z",
+          "schedule": "one-time",
+          "fromUserId": "mmxoe2tyswnmel14"
+        }
+      ],
+      "lockedFunds": [
+        {
+          "_id": "mmxx2g2qbzbuexnq",
+          "amount": 0,
+          "lockedAt": "2026-03-19T20:22:26.786Z",
+          "unlocksAt": "2036-03-19T20:22:26.785Z",
+          "isActive": false,
+          "description": "Medical Reserve"
+        },
+        {
+          "_id": "mmxx397mtd3n5fjy",
+          "amount": 0,
+          "lockedAt": "2026-03-19T20:23:04.546Z",
+          "unlocksAt": "2036-03-19T20:23:04.546Z",
+          "isActive": false,
+          "description": "Medical Reserve"
+        },
+        {
+          "_id": "mmyz9ykjoiv0lccx",
+          "amount": 5000,
+          "lockedAt": "2026-03-20T14:12:02.755Z",
+          "unlocksAt": "2036-03-20T14:12:02.754Z",
+          "isActive": true,
+          "description": "Medical Reserve"
+        }
+      ],
+      "scheduledDeposits": [],
+      "createdAt": "2026-03-19T16:09:21.919Z",
+      "updatedAt": "2026-03-20T14:12:02.756Z"
+    }
+  ],
+  "medications": [
+    {
+      "_id": "mmxofsz7w4lila3s",
+      "name": "Insulin",
+      "description": "take with food in the morning",
+      "remainingQty": 30,
+      "totalQty": 30,
+      "usageRate": 1,
+      "refillCost": 5000,
+      "walletId": "mmxo0zcvsiwl7j0v",
+      "pharmacyId": "mmxoe2tyswnmel14",
+      "lastRefillDate": "2026-03-19T16:21:44.041Z",
+      "isActive": true,
+      "refillStatus": "approved",
+      "refillRequestedAt": "2026-03-19T16:20:53.490Z",
+      "refillRequestedBy": "mmxo0zcs1kg3n4ui",
+      "countdownActive": true,
+      "createdAt": "2026-03-19T16:20:53.491Z",
+      "updatedAt": "2026-03-19T16:21:44.044Z",
+      "countdownEndDate": "2026-04-18T16:21:44.041Z"
+    },
+    {
+      "_id": "mmyz7fb5w9t6x6il",
+      "name": "Paracetamol",
+      "description": "Take without food inn the morning",
+      "remainingQty": 30,
+      "totalQty": 30,
+      "usageRate": 1,
+      "refillCost": 2000,
+      "walletId": "mmxo0zcvsiwl7j0v",
+      "pharmacyId": "mmxoe2tyswnmel14",
+      "lastRefillDate": "2026-03-20T14:10:49.611Z",
+      "isActive": true,
+      "refillStatus": "approved",
+      "refillRequestedAt": "2026-03-20T14:10:04.481Z",
+      "refillRequestedBy": "mmxo0zcs1kg3n4ui",
+      "countdownActive": true,
+      "createdAt": "2026-03-20T14:10:04.481Z",
+      "updatedAt": "2026-03-20T14:10:49.612Z",
+      "countdownEndDate": "2026-04-19T14:10:49.611Z"
+    }
+  ],
+  "notifications": [
+    {
+      "_id": "mmxo7nnophjn3i4x",
+      "userId": "mmxo0zcs1kg3n4ui",
+      "type": "deposit",
+      "title": "Deposit Received",
+      "message": "₦5,000 was deposited to your wallet via visa.",
+      "read": true,
+      "data": {
+        "walletId": "mmxo0zcvsiwl7j0v",
+        "amount": 5000,
+        "fromUserId": "mmxo59hq03ikxkg5"
+      },
+      "createdAt": "2026-03-19T16:14:33.348Z",
+      "updatedAt": "2026-03-19T16:15:14.226Z"
+    },
+    {
+      "_id": "mmxofszlcltpfd86",
+      "userId": "mmxoe2tyswnmel14",
+      "type": "refill",
+      "title": "New Medication Request",
+      "message": "Paul Smith has added a new medication \"Insulin\" and is requesting approval. Refill cost: ₦5,000.",
+      "read": false,
+      "data": {
+        "medicationId": "mmxofsz7w4lila3s",
+        "parentId": "mmxo0zcs1kg3n4ui",
+        "walletId": "mmxo0zcvsiwl7j0v",
+        "amount": 5000
+      },
+      "createdAt": "2026-03-19T16:20:53.505Z",
+      "updatedAt": "2026-03-19T16:20:53.505Z"
+    },
+    {
+      "_id": "mmxofszo9pr98sl8",
+      "userId": "mmxo0zcs1kg3n4ui",
+      "type": "refill",
+      "title": "Medication Request Sent",
+      "message": "Your medication \"Insulin\" request has been sent to Sanjesh Nabeel for approval.",
+      "read": false,
+      "data": {
+        "medicationId": "mmxofsz7w4lila3s",
+        "pharmacyName": "Sanjesh Nabeel"
+      },
+      "createdAt": "2026-03-19T16:20:53.508Z",
+      "updatedAt": "2026-03-19T16:20:53.508Z"
+    },
+    {
+      "_id": "mmxogw3bb1munn6b",
+      "userId": "mmxo0zcs1kg3n4ui",
+      "type": "refill",
+      "title": "Medication Approved! 💊",
+      "message": "Sanjesh Nabeel approved your medication \"Insulin\". The countdown has started (30 days).",
+      "read": false,
+      "data": {
+        "medicationId": "mmxofsz7w4lila3s",
+        "walletId": "mmxo0zcvsiwl7j0v",
+        "pharmacyId": "mmxoe2tyswnmel14",
+        "daysSupply": 30
+      },
+      "createdAt": "2026-03-19T16:21:44.183Z",
+      "updatedAt": "2026-03-19T16:21:44.183Z"
+    },
+    {
+      "_id": "mmxom9ski8q27zuy",
+      "userId": "mmxo0zcs1kg3n4ui",
+      "type": "deduction",
+      "title": "Withdrawal Successful",
+      "message": "₦2,000 was successfully withdrawn to GTBank (0210818922).",
+      "read": false,
+      "data": {
+        "walletId": "mmxo0zcvsiwl7j0v",
+        "amount": 2000
+      },
+      "createdAt": "2026-03-19T16:25:55.220Z",
+      "updatedAt": "2026-03-19T16:25:55.220Z"
+    },
+    {
+      "_id": "mmxvg47kkj4osxkv",
+      "userId": "mmxo0zcs1kg3n4ui",
+      "type": "deposit",
+      "title": "Deposit Received",
+      "message": "₦10,000 was deposited to your wallet via visa.",
+      "read": false,
+      "data": {
+        "walletId": "mmxo0zcvsiwl7j0v",
+        "amount": 10000,
+        "fromUserId": "mmxo59hq03ikxkg5"
+      },
+      "createdAt": "2026-03-19T19:37:05.360Z",
+      "updatedAt": "2026-03-19T19:37:05.360Z"
+    },
+    {
+      "_id": "mmxx2g307pf78t51",
+      "userId": "mmxo0zcs1kg3n4ui",
+      "type": "deposit",
+      "title": "Deposit Received",
+      "message": "₦5,000 was deposited to your wallet via visa.",
+      "read": false,
+      "data": {
+        "walletId": "mmxo0zcvsiwl7j0v",
+        "amount": 5000,
+        "fromUserId": "mmxo0zcs1kg3n4ui"
+      },
+      "createdAt": "2026-03-19T20:22:26.796Z",
+      "updatedAt": "2026-03-19T20:22:26.796Z"
+    },
+    {
+      "_id": "mmxx842ozq35f2to",
+      "userId": "mmxo0zcs1kg3n4ui",
+      "type": "deduction",
+      "title": "Pharmacy Payment Processed",
+      "message": "₦5,000 paid to Sanjesh Nabeel for Insulin (from locked funds).",
+      "read": false,
+      "data": {
+        "walletId": "mmxo0zcvsiwl7j0v",
+        "amount": 5000,
+        "pharmacyId": "mmxoe2tyswnmel14"
+      },
+      "createdAt": "2026-03-19T20:26:51.168Z",
+      "updatedAt": "2026-03-19T20:26:51.168Z"
+    },
+    {
+      "_id": "mmyz7fbel3sk9gd3",
+      "userId": "mmxoe2tyswnmel14",
+      "type": "refill",
+      "title": "New Medication Request",
+      "message": "Paul Smith has added a new medication \"Paracetamol\" and is requesting approval. Refill cost: ₦2,000.",
+      "read": false,
+      "data": {
+        "medicationId": "mmyz7fb5w9t6x6il",
+        "parentId": "mmxo0zcs1kg3n4ui",
+        "walletId": "mmxo0zcvsiwl7j0v",
+        "amount": 2000
+      },
+      "createdAt": "2026-03-20T14:10:04.489Z",
+      "updatedAt": "2026-03-20T14:10:04.489Z"
+    },
+    {
+      "_id": "mmyz7fbhxxvukclz",
+      "userId": "mmxo0zcs1kg3n4ui",
+      "type": "refill",
+      "title": "Medication Request Sent",
+      "message": "Your medication \"Paracetamol\" request has been sent to Sanjesh Nabeel for approval.",
+      "read": false,
+      "data": {
+        "medicationId": "mmyz7fb5w9t6x6il",
+        "pharmacyName": "Sanjesh Nabeel"
+      },
+      "createdAt": "2026-03-20T14:10:04.493Z",
+      "updatedAt": "2026-03-20T14:10:04.493Z"
+    },
+    {
+      "_id": "mmyz8e4vmkcxejmm",
+      "userId": "mmxo0zcs1kg3n4ui",
+      "type": "refill",
+      "title": "Medication Approved! 💊",
+      "message": "Sanjesh Nabeel approved your medication \"Paracetamol\". The countdown has started (30 days).",
+      "read": false,
+      "data": {
+        "medicationId": "mmyz7fb5w9t6x6il",
+        "walletId": "mmxo0zcvsiwl7j0v",
+        "pharmacyId": "mmxoe2tyswnmel14",
+        "daysSupply": 30
+      },
+      "createdAt": "2026-03-20T14:10:49.615Z",
+      "updatedAt": "2026-03-20T14:10:49.615Z"
+    },
+    {
+      "_id": "mmyz8qp99c9tn0u5",
+      "userId": "mmxo0zcs1kg3n4ui",
+      "type": "deduction",
+      "title": "Pharmacy Payment Processed",
+      "message": "₦2,000 paid to Sanjesh Nabeel for Paracetamol (from locked funds).",
+      "read": false,
+      "data": {
+        "walletId": "mmxo0zcvsiwl7j0v",
+        "amount": 2000,
+        "pharmacyId": "mmxoe2tyswnmel14"
+      },
+      "createdAt": "2026-03-20T14:11:05.901Z",
+      "updatedAt": "2026-03-20T14:11:05.901Z"
+    }
+  ]
+}

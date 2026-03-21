@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import { User, Wallet, Medication } from '@/lib/models';
+import { Users, Wallets, Medications } from '@/lib/indexedDB';
 
 // Helper: calculate days remaining from countdownEndDate or qty
-function getDaysRemaining(med: { countdownEndDate?: Date; remainingQty: number; usageRate: number }) {
+function getDaysRemaining(med: { countdownEndDate?: string; remainingQty: number; usageRate: number }) {
     if (med.countdownEndDate) {
         const msLeft = new Date(med.countdownEndDate).getTime() - Date.now();
         if (msLeft <= 0) return 0;
@@ -25,10 +24,7 @@ export async function GET() {
             );
         }
 
-        await dbConnect();
-
-        const user = await User.findById(session.user.id)
-            .populate('links', 'name email role avatar');
+        const user = Users.findById(session.user.id);
 
         if (!user) {
             return NextResponse.json(
@@ -41,40 +37,34 @@ export async function GET() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const dashboardData: Record<string, any> = {
             user: {
-                id: user._id.toString(),
+                id: user._id,
                 name: user.name,
                 email: user.email,
                 role: user.role,
                 linkCode: user.linkCode,
             },
-            links: user.links || [],
+            links: Users.findByIds(user.links || []),
         };
 
         if (role === 'parent') {
             // Get parent's wallet
-            const wallet = await Wallet.findOne({ owner: user._id });
+            const wallet = Wallets.findByOwner(user._id);
 
-            // Get medications linked to this wallet
+            // Get only APPROVED medications linked to this wallet
             const medications = wallet
-                ? await Medication.find({ walletId: wallet._id, isActive: true })
+                ? Medications.findByWalletIdAndStatus(wallet._id, 'approved')
                 : [];
 
             // Get linked children
-            const children = await User.find({
-                _id: { $in: user.links || [] },
-                role: 'child',
-            }).select('name email avatar');
+            const children = Users.findByIdsAndRole(user.links || [], 'child');
 
             // Get linked pharmacies
-            const pharmacies = await User.find({
-                _id: { $in: user.links || [] },
-                role: 'pharmacy',
-            }).select('name email avatar');
+            const pharmacies = Users.findByIdsAndRole(user.links || [], 'pharmacy');
 
             // Calculate last deposit
             let lastDeposit = null;
             if (wallet && wallet.transactions.length > 0) {
-                const deposits = wallet.transactions.filter((t: { type: string }) => t.type === 'deposit');
+                const deposits = wallet.transactions.filter((t) => t.type === 'deposit');
                 if (deposits.length > 0) {
                     const latest = deposits[deposits.length - 1];
                     lastDeposit = {
@@ -90,8 +80,8 @@ export async function GET() {
                 ? wallet.transactions
                     .slice(-10)
                     .reverse()
-                    .map((t: { _id: { toString(): string }; amount: number; type: string; description: string; date: Date }) => ({
-                        id: t._id.toString(),
+                    .map((t) => ({
+                        id: t._id,
                         amount: t.amount,
                         type: t.type,
                         description: t.description,
@@ -100,31 +90,34 @@ export async function GET() {
                 : [];
 
             dashboardData.wallet = wallet ? {
-                id: wallet._id.toString(),
+                id: wallet._id,
                 balance: wallet.balance,
+                availableBalance: Wallets.getAvailableBalance(wallet),
+                lockedFunds: Wallets.getTotalLocked(wallet),
                 currency: wallet.currency,
                 lastDeposit,
             } : null;
 
             dashboardData.medications = medications.map((med) => ({
-                id: med._id.toString(),
+                id: med._id,
                 name: med.name,
                 daysRemaining: getDaysRemaining(med),
                 totalDays: med.usageRate > 0 ? Math.floor(med.totalQty / med.usageRate) : 30,
                 refillCost: med.refillCost,
                 remainingQty: med.remainingQty,
                 refillStatus: med.refillStatus || 'none',
-                countdownEndDate: med.countdownEndDate?.toISOString() || null,
+                countdownEndDate: med.countdownEndDate || null,
+                countdownActive: med.countdownActive || false,
             }));
 
             dashboardData.children = children.map((child) => ({
-                id: child._id.toString(),
+                id: child._id,
                 name: child.name,
                 avatar: child.avatar || '👤',
             }));
 
             dashboardData.pharmacies = pharmacies.map((pharmacy) => ({
-                id: pharmacy._id.toString(),
+                id: pharmacy._id,
                 name: pharmacy.name,
             }));
 
@@ -132,54 +125,47 @@ export async function GET() {
 
         } else if (role === 'child') {
             // Get linked parents with their wallets
-            const parents = await User.find({
-                _id: { $in: user.links || [] },
-                role: 'parent',
-            }).select('name email avatar');
+            const parents = Users.findByIdsAndRole(user.links || [], 'parent');
 
-            const parentsWithWallets = await Promise.all(
-                parents.map(async (parent) => {
-                    const wallet = await Wallet.findOne({ owner: parent._id });
+            const parentsWithWallets = parents.map((parent) => {
+                const wallet = Wallets.findByOwner(parent._id);
 
-                    // Get medications for this parent's wallet
-                    const medications = wallet
-                        ? await Medication.find({ walletId: wallet._id, isActive: true })
-                        : [];
+                // Get medications for this parent's wallet
+                const medications = wallet
+                    ? Medications.findByWalletId(wallet._id, true)
+                    : [];
 
-                    // Calculate locked funds info
-                    const activeLocks = wallet?.lockedFunds?.filter(
-                        (l: { isActive: boolean; unlocksAt: Date }) =>
-                            l.isActive && new Date(l.unlocksAt) > new Date()
-                    ) || [];
+                // Calculate locked funds info
+                const totalLocked = wallet ? Wallets.getTotalLocked(wallet) : 0;
 
-                    const totalLocked = activeLocks.reduce(
-                        (sum: number, l: { amount: number }) => sum + l.amount, 0
-                    );
+                const activeLocks = wallet?.lockedFunds?.filter(
+                    (l) => l.isActive
+                ) || [];
 
-                    return {
-                        id: parent._id.toString(),
-                        name: parent.name,
-                        avatar: parent.avatar || '👤',
-                        walletId: wallet?._id.toString() || null,
-                        balance: wallet?.balance || 0,
-                        availableBalance: (wallet?.balance || 0) - totalLocked,
-                        totalLocked,
-                        lockedFunds: activeLocks.map((l: { _id: { toString(): string }; medicationName: string; amount: number; unlocksAt: Date }) => ({
-                            id: l._id.toString(),
-                            medicationName: l.medicationName,
-                            amount: l.amount,
-                            unlocksAt: l.unlocksAt,
-                        })),
-                        medications: medications.map((med) => ({
-                            id: med._id.toString(),
-                            name: med.name,
-                            daysRemaining: getDaysRemaining(med),
-                            totalDays: med.usageRate > 0 ? Math.floor(med.totalQty / med.usageRate) : 30,
-                            countdownEndDate: med.countdownEndDate?.toISOString() || null,
-                        })),
-                    };
-                })
-            );
+                return {
+                    id: parent._id,
+                    name: parent.name,
+                    avatar: parent.avatar || '👤',
+                    walletId: wallet?._id || null,
+                    balance: wallet?.balance || 0,
+                    availableBalance: wallet ? Wallets.getAvailableBalance(wallet) : 0,
+                    totalLocked,
+                    lockedFunds: activeLocks.map((l) => ({
+                        id: l._id,
+                        amount: l.amount,
+                        unlocksAt: l.unlocksAt,
+                        description: l.description || '',
+                    })),
+                    medications: medications.map((med) => ({
+                        id: med._id,
+                        name: med.name,
+                        daysRemaining: getDaysRemaining(med),
+                        totalDays: med.usageRate > 0 ? Math.floor(med.totalQty / med.usageRate) : 30,
+                        refillCost: med.refillCost,
+                        countdownEndDate: med.countdownEndDate || null,
+                    })),
+                };
+            });
 
             // Calculate total deposited by this child
             let totalDeposited = 0;
@@ -189,16 +175,16 @@ export async function GET() {
 
             for (const parent of parentsWithWallets) {
                 if (parent.walletId) {
-                    const wallet = await Wallet.findById(parent.walletId);
+                    const wallet = Wallets.findById(parent.walletId);
                     if (wallet) {
                         const childDeposits = wallet.transactions.filter(
-                            (t: { type: string; fromUserId?: { toString(): string } }) =>
+                            (t) =>
                                 t.type === 'deposit' &&
-                                t.fromUserId?.toString() === session.user.id
+                                t.fromUserId === session.user.id
                         );
-                        totalDeposited += childDeposits.reduce((sum: number, t: { amount: number }) => sum + t.amount, 0);
+                        totalDeposited += childDeposits.reduce((sum, t) => sum + t.amount, 0);
                         depositsThisMonth += childDeposits.filter(
-                            (t: { date: Date }) => new Date(t.date) >= startOfMonth
+                            (t) => new Date(t.date) >= startOfMonth
                         ).length;
                     }
                 }
@@ -210,45 +196,40 @@ export async function GET() {
 
         } else if (role === 'pharmacy') {
             // Get linked parents (patients)
-            const patients = await User.find({
-                _id: { $in: user.links || [] },
-                role: 'parent',
-            }).select('name email avatar linkCode');
+            const patients = Users.findByIdsAndRole(user.links || [], 'parent');
 
-            const patientsWithData = await Promise.all(
-                patients.map(async (patient) => {
-                    const wallet = await Wallet.findOne({ owner: patient._id });
-                    // Show ALL active medications for connected patients (not filtered by pharmacyId)
-                    const medications = wallet
-                        ? await Medication.find({
-                            walletId: wallet._id,
-                            isActive: true,
-                        })
-                        : [];
+            const patientsWithData = patients.map((patient) => {
+                const wallet = Wallets.findByOwner(patient._id);
+                // Show ALL active medications for connected patients
+                const medications = wallet
+                    ? Medications.findByWalletId(wallet._id, true)
+                    : [];
 
-                    return {
-                        id: patient._id.toString(),
-                        name: patient.name,
-                        linkCode: patient.linkCode,
-                        walletBalance: wallet?.balance || 0,
-                        medications: medications.map((med) => ({
-                            id: med._id.toString(),
-                            name: med.name,
-                            daysRemaining: getDaysRemaining(med),
-                            totalDays: med.usageRate > 0 ? Math.floor(med.totalQty / med.usageRate) : 30,
-                            refillCost: med.refillCost,
-                            status: med.refillStatus === 'requested' ? 'pending' : med.remainingQty <= 0 ? 'depleted' : 'active',
-                            refillStatus: med.refillStatus || 'none',
-                            countdownEndDate: med.countdownEndDate?.toISOString() || null,
-                        })),
-                    };
-                })
-            );
+                return {
+                    id: patient._id,
+                    name: patient.name,
+                    linkCode: patient.linkCode,
+                    walletBalance: wallet?.balance || 0,
+                    availableBalance: wallet ? Wallets.getAvailableBalance(wallet) : 0,
+                    lockedFunds: wallet ? Wallets.getTotalLocked(wallet) : 0,
+                    medications: medications.map((med) => ({
+                        id: med._id,
+                        name: med.name,
+                        daysRemaining: getDaysRemaining(med),
+                        totalDays: med.usageRate > 0 ? Math.floor(med.totalQty / med.usageRate) : 30,
+                        refillCost: med.refillCost,
+                        status: med.refillStatus === 'pending_approval' ? 'pending' : med.remainingQty <= 0 ? 'depleted' : 'active',
+                        refillStatus: med.refillStatus || 'none',
+                        countdownEndDate: med.countdownEndDate || null,
+                        countdownActive: med.countdownActive || false,
+                    })),
+                };
+            });
 
-            // Get pending refills — medications with refillStatus === 'requested'
+            // Get pending refills — medications with refillStatus === 'pending_approval'
             const pendingRefills = patientsWithData.flatMap((patient) =>
                 patient.medications
-                    .filter((med) => med.refillStatus === 'requested')
+                    .filter((med) => med.refillStatus === 'pending_approval')
                     .map((med) => ({
                         id: med.id,
                         patient: patient.name,
@@ -271,4 +252,3 @@ export async function GET() {
         );
     }
 }
-

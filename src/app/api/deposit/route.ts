@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import { Wallet, Notification } from '@/lib/models';
+import { Wallets, Notifications, generateId } from '@/lib/indexedDB';
 import { validateCard } from '@/lib/cardValidation';
-import type { ScheduleType } from '@/lib/models/Wallet';
-import mongoose from 'mongoose';
 
 export async function POST(request: NextRequest) {
     try {
@@ -22,14 +19,14 @@ export async function POST(request: NextRequest) {
         const {
             walletId,
             amount,
-            cardNumber, // direct fields from frontend
+            cardNumber,
             expiry,
             cvv,
             schedule = 'one-time',
-            lockSettings // { enabled, medicationName, amount, durationDays }
+            lockSettings // { enabled, amount, durationDays, description }
         } = body;
 
-        // Map fields to cardDetails expectation
+        // Map fields to cardDetails
         const cardDetails = {
             number: cardNumber || body.cardDetails?.number,
             expiry: expiry || body.cardDetails?.expiry,
@@ -60,10 +57,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        await dbConnect();
-
         // Find wallet
-        const wallet = await Wallet.findById(walletId);
+        const wallet = Wallets.findById(walletId);
         if (!wallet) {
             return NextResponse.json(
                 { error: 'Wallet not found' },
@@ -71,62 +66,40 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Add transaction directly to wallet
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (wallet.transactions as any).push({
+        // Add transaction
+        wallet.transactions.push({
+            _id: generateId(),
             amount,
             type: 'deposit',
             description: `Deposit via ${cardValidation.cardType?.toUpperCase() || 'Card'} ending in ${cardDetails.number.slice(-4)}`,
-            date: new Date(),
-            schedule: schedule as ScheduleType,
-            fromUserId: new mongoose.Types.ObjectId(session.user.id),
+            date: new Date().toISOString(),
+            schedule: schedule,
+            fromUserId: session.user.id,
         });
         wallet.balance += amount;
 
-        // If scheduled deposit, add to schedule
-        if (schedule !== 'one-time') {
-            const scheduleMap = {
-                daily: 1,
-                weekly: 7,
-                monthly: 30,
-            };
-            const daysToAdd = scheduleMap[schedule as keyof typeof scheduleMap] || 30;
-            const nextDate = new Date();
-            nextDate.setDate(nextDate.getDate() + daysToAdd);
-
-            wallet.scheduledDeposits.push({
-                amount,
-                schedule: schedule as ScheduleType,
-                nextDate,
-                fromUserId: new mongoose.Types.ObjectId(session.user.id),
-                isActive: true,
-            });
-        }
-
-        // Handle Locked Funds
-        if (lockSettings?.enabled && lockSettings.medicationName && lockSettings.amount) {
+        // Handle Locked Funds — now decoupled from medications
+        if (lockSettings?.enabled && lockSettings.amount) {
             const lockAmount = Number(lockSettings.amount);
-            const duration = Number(lockSettings.durationDays) || 30;
-
             if (lockAmount > 0 && lockAmount <= wallet.balance) {
                 const unlockDate = new Date();
-                unlockDate.setDate(unlockDate.getDate() + duration);
+                unlockDate.setFullYear(unlockDate.getFullYear() + 10);
 
                 wallet.lockedFunds.push({
-                    _id: new mongoose.Types.ObjectId(),
-                    medicationName: lockSettings.medicationName,
+                    _id: generateId(),
                     amount: lockAmount,
-                    lockedAt: new Date(),
-                    unlocksAt: unlockDate,
+                    lockedAt: new Date().toISOString(),
+                    unlocksAt: unlockDate.toISOString(),
                     isActive: true,
+                    description: lockSettings.description || 'Locked funds',
                 });
             }
         }
 
-        await wallet.save();
+        Wallets.save(wallet);
 
         // Create notification for wallet owner
-        await Notification.create({
+        Notifications.create({
             userId: wallet.owner,
             type: 'deposit',
             title: 'Deposit Received',

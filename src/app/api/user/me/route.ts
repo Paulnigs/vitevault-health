@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import User from '@/lib/models/User';
+import { Users } from '@/lib/indexedDB';
 
 export async function GET() {
     try {
@@ -15,9 +14,7 @@ export async function GET() {
             );
         }
 
-        await dbConnect();
-
-        const user = await User.findOne({ email: session.user.email }).select('-password');
+        const user = Users.findByEmail(session.user.email);
 
         if (!user) {
             return NextResponse.json(
@@ -28,12 +25,12 @@ export async function GET() {
 
         return NextResponse.json({
             user: {
-                id: user._id.toString(),
+                id: user._id,
                 email: user.email,
                 name: user.name,
                 role: user.role,
                 links: user.links || [],
-                walletId: user.walletId?.toString(),
+                walletId: user.walletId,
                 createdAt: user.createdAt,
                 notifications: user.notifications,
             },
@@ -61,18 +58,7 @@ export async function PATCH(request: Request) {
         const body = await request.json();
         const { name, notificationPrefs } = body;
 
-        await dbConnect();
-
-        const updateData: Record<string, unknown> = {};
-        if (name) updateData.name = name;
-        if (notificationPrefs) updateData.notifications = notificationPrefs;
-
-        const user = await User.findOneAndUpdate(
-            { email: session.user.email },
-            { $set: updateData },
-            { new: true }
-        ).select('-password');
-
+        const user = Users.findByEmail(session.user.email);
         if (!user) {
             return NextResponse.json(
                 { error: 'User not found' },
@@ -80,15 +66,23 @@ export async function PATCH(request: Request) {
             );
         }
 
+        const updateData: Record<string, unknown> = {};
+        if (name) updateData.name = name;
+        if (notificationPrefs) updateData.notifications = notificationPrefs;
+
+        Users.update(user._id, updateData);
+        
+        const updatedUser = Users.findById(user._id)!;
+
         return NextResponse.json({
             user: {
-                id: user._id.toString(),
-                email: user.email,
-                name: user.name,
-                role: user.role,
-                links: user.links || [],
-                walletId: user.walletId?.toString(),
-                notifications: user.notifications,
+                id: updatedUser._id,
+                email: updatedUser.email,
+                name: updatedUser.name,
+                role: updatedUser.role,
+                links: updatedUser.links || [],
+                walletId: updatedUser.walletId,
+                notifications: updatedUser.notifications,
             },
         });
     } catch (error) {

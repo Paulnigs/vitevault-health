@@ -8,6 +8,7 @@ import { useRealtime } from '@/hooks/useRealtime';
 import toast from 'react-hot-toast';
 import { AnimatePresence } from 'framer-motion';
 import LockFundsModal from '@/components/LockFundsModal';
+import WithdrawModal from '@/components/WithdrawModal';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -67,6 +68,7 @@ export default function WalletPage() {
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'deposit' | 'deduction'>('all');
     const [showLockModal, setShowLockModal] = useState(false);
+    const [showWithdrawModal, setShowWithdrawModal] = useState(false);
 
 
     const fetchWallet = useCallback(async () => {
@@ -199,14 +201,35 @@ export default function WalletPage() {
                     <div className="grid md:grid-cols-2 gap-4">
                         <Card className="p-6 bg-linear-to-r from-primary to-secondary text-white relative overflow-hidden">
                             <div className="relative z-10">
-                                <p className="text-sm opacity-80 mb-1">Available Balance</p>
-                                <h1 className="text-4xl font-bold mb-2">
-                                    ₦{(wallet.availableBalance || wallet.balance).toLocaleString()}
-                                </h1>
-                                <p className="text-xs opacity-70 mb-4">
-                                    Total Balance: ₦{wallet.balance.toLocaleString()}
-                                </p>
-                                <div className="flex gap-3">
+                                <p className="text-sm opacity-80 mb-4">Wallet Funds Breakdown</p>
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-xs opacity-70 mb-1">Available Balance (Can Withdraw)</p>
+                                        <p className="text-3xl font-bold text-green-300">
+                                            ₦{(wallet.availableBalance || 0).toLocaleString()}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs opacity-70 mb-1">Locked for Medications</p>
+                                        <p className="text-3xl font-bold text-yellow-300">
+                                            ₦{(wallet.balance - (wallet.availableBalance || 0)).toLocaleString()}
+                                        </p>
+                                    </div>
+                                    <div className="border-t border-white/20 pt-2">
+                                        <p className="text-xs opacity-70 mb-1">Total Balance</p>
+                                        <p className="text-2xl font-bold">
+                                            ₦{wallet.balance.toLocaleString()}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-3 mt-4">
+                                    <Button
+                                        variant="secondary"
+                                        className="bg-white/20 hover:bg-white/30 text-white border-white/30"
+                                        onClick={() => setShowWithdrawModal(true)}
+                                    >
+                                        🏦 Withdraw
+                                    </Button>
                                     <Button
                                         variant="secondary"
                                         className="bg-white/20 hover:bg-white/30 text-white border-white/30"
@@ -248,29 +271,6 @@ export default function WalletPage() {
                                             </div>
                                             <div className="text-right">
                                                 <p className="font-bold text-neutral-dark">₦{lock.amount.toLocaleString()}</p>
-                                                <button
-                                                    onClick={async () => {
-                                                        if (confirm(`⚠️ Emergency Unlock for ${lock.medicationName} incurs a 5% fee (₦${(lock.amount * 0.05).toLocaleString()}). Proceed?`)) {
-                                                            try {
-                                                                const res = await fetch(`/api/wallet/${walletId}/lock`, {
-                                                                    method: 'POST',
-                                                                    body: JSON.stringify({ action: 'emergency_unlock', lockId: lock._id })
-                                                                });
-                                                                if (res.ok) {
-                                                                    toast.success('Unlocked successfully');
-                                                                    fetchWallet();
-                                                                } else {
-                                                                    toast.error('Failed to unlock');
-                                                                }
-                                                            } catch (e) {
-                                                                toast.error('Network error');
-                                                            }
-                                                        }
-                                                    }}
-                                                    className="text-xs text-red-500 hover:text-red-700 underline mt-1"
-                                                >
-                                                    Emergency Unlock
-                                                </button>
                                             </div>
                                         </div>
                                     ))
@@ -283,6 +283,14 @@ export default function WalletPage() {
                 <LockFundsModal
                     isOpen={showLockModal}
                     onClose={() => setShowLockModal(false)}
+                    walletId={walletId}
+                    availableBalance={wallet.availableBalance || 0}
+                    onSuccess={fetchWallet}
+                />
+
+                <WithdrawModal
+                    isOpen={showWithdrawModal}
+                    onClose={() => setShowWithdrawModal(false)}
                     walletId={walletId}
                     availableBalance={wallet.availableBalance || 0}
                     onSuccess={fetchWallet}

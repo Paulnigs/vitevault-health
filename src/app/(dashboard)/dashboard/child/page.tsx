@@ -8,12 +8,14 @@ import { Button, Card, Modal, Input, CountdownTimer, Skeleton } from '@/componen
 import { DEMO_CARDS, formatCardNumber } from '@/lib/cardValidation';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
+import FastForwardButton from '@/components/FastForwardButton';
 
 interface Medication {
     id: string;
     name: string;
     daysRemaining: number;
     totalDays: number;
+    refillCost: number;
 }
 
 interface LockedFund {
@@ -60,10 +62,8 @@ export default function ChildDashboard() {
     const [selectedParent, setSelectedParent] = useState<Parent | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
-    // ── Lock Modal (standalone from dashboard) ──
     const [isLockModalOpen, setIsLockModalOpen] = useState(false);
     const [lockParentId, setLockParentId] = useState<string>('');
-    const [lockMedName, setLockMedName] = useState('');
     const [lockAmount, setLockAmount] = useState('');
     const [lockLoading, setLockLoading] = useState(false);
 
@@ -80,8 +80,6 @@ export default function ChildDashboard() {
     const [isLockEnabled, setIsLockEnabled] = useState(false);
     const [lockOption, setLockOption] = useState<'all' | 'partial'>('all');
     const [depositLockAmount, setDepositLockAmount] = useState('');
-    const [lockMedicationName, setLockMedicationName] = useState('');
-    const [lockDuration, setLockDuration] = useState(30);
 
     const presetAmounts = [1000, 5000, 10000, 20000];
 
@@ -123,8 +121,6 @@ export default function ChildDashboard() {
         setIsLockEnabled(false);
         setLockOption('all');
         setDepositLockAmount('');
-        setLockMedicationName('');
-        setLockDuration(30);
         setIsDepositModalOpen(true);
     };
 
@@ -160,9 +156,7 @@ export default function ChildDashboard() {
                     schedule: 'one-time',
                     lockSettings: {
                         enabled: isLockEnabled,
-                        medicationName: lockMedicationName,
-                        amount: lockAmt,
-                        durationDays: lockDuration
+                        amount: lockAmt
                     }
                 }),
             });
@@ -177,8 +171,6 @@ export default function ChildDashboard() {
             setIsDepositModalOpen(false);
             setDepositForm({ amount: '', cardNumber: '', expiry: '', cvv: '' });
             setIsLockEnabled(false);
-            setLockMedicationName('');
-            setLockDuration(30);
 
             fetchDashboardData();
         } catch (error) {
@@ -189,12 +181,8 @@ export default function ChildDashboard() {
         }
     };
 
-    // ── Lock Funds from Dashboard (add to existing medication) ──
+    // ── Lock Funds from Dashboard ──
     const handleLockFunds = async () => {
-        if (!lockMedName.trim()) {
-            toast.error('Please select a medication');
-            return;
-        }
         const amt = Number(lockAmount);
         if (!amt || amt <= 0) {
             toast.error('Please enter a valid amount');
@@ -217,16 +205,13 @@ export default function ChildDashboard() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'create',
-                    medicationName: lockMedName.trim(),
-                    amount: amt,
-                    durationDays: 30, // uses existing duration
+                    amount: amt
                 }),
             });
             const data = await res.json();
             if (res.ok) {
-                toast.success(`₦${amt.toLocaleString()} added to ${lockMedName}`, { icon: '🔒' });
+                toast.success(`₦${amt.toLocaleString()} added to locked funds`, { icon: '🔒' });
                 setIsLockModalOpen(false);
-                setLockMedName('');
                 setLockAmount('');
                 setLockParentId('');
                 await fetchDashboardData();
@@ -278,7 +263,6 @@ export default function ChildDashboard() {
                 return !!depositForm.cardNumber && !!depositForm.expiry && !!depositForm.cvv;
             case 'lock':
                 if (!isLockEnabled) return true;
-                if (!lockMedicationName) return false;
                 if (lockOption === 'partial' && (!depositLockAmount || parseInt(depositLockAmount) <= 0 || parseInt(depositLockAmount) > parseInt(depositForm.amount))) return false;
                 return true;
             case 'review':
@@ -476,6 +460,15 @@ export default function ChildDashboard() {
                                     <p className="text-sm text-[#6C757D]">
                                         {med.daysRemaining} days remaining
                                     </p>
+                                    <div className="mt-3">
+                                        <FastForwardButton
+                                            medicationId={med.id}
+                                            medicationName={med.name}
+                                            currentDays={med.daysRemaining}
+                                            refillCost={med.refillCost}
+                                            onUpdate={() => fetchDashboardData()}
+                                        />
+                                    </div>
                                 </div>
                             </Card>
                         ))}
@@ -488,15 +481,14 @@ export default function ChildDashboard() {
                 isOpen={isLockModalOpen}
                 onClose={() => {
                     setIsLockModalOpen(false);
-                    setLockMedName('');
                     setLockAmount('');
                     setLockParentId('');
                 }}
-                title="🔒 Add Funds to Medication"
+                title="🔒 Lock Funds"
             >
                 <div className="space-y-4">
                     <p className="text-sm text-[#6C757D]">
-                        Add more funds to an existing locked medication. The original duration remains unchanged.
+                        Lock funds securely to ensure they are available for medical usage.
                     </p>
 
                     {/* Parent selector (if multiple) */}
@@ -527,94 +519,19 @@ export default function ChildDashboard() {
                         </div>
                     )}
 
-                    {/* Existing medications to choose from */}
-                    {(() => {
-                        const selectedParentLocks = lockParentId
-                            ? (parents.find(p => p.walletId === lockParentId)?.lockedFunds || [])
-                            : allLockedFunds;
-                        const uniqueMeds = Array.from(new Set(selectedParentLocks.map(l => l.medicationName)));
+                    {/* Amount */}
+                    <Input
+                        label="Amount to Lock (₦)"
+                        type="number"
+                        placeholder="0.00"
+                        value={lockAmount}
+                        onChange={(e) => setLockAmount(e.target.value)}
+                        required
+                    />
 
-                        if (uniqueMeds.length > 0) {
-                            return (
-                                <div>
-                                    <label className="block text-sm font-medium text-[#343A40] mb-2">
-                                        Select Medication
-                                    </label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {uniqueMeds.map(med => {
-                                            const isSelected = lockMedName === med;
-                                            const lockedAmt = selectedParentLocks
-                                                .filter(l => l.medicationName === med)
-                                                .reduce((s, l) => s + l.amount, 0);
-                                            return (
-                                                <button
-                                                    key={med}
-                                                    type="button"
-                                                    onClick={() => setLockMedName(med)}
-                                                    className={`
-                                                        px-3 py-2 rounded-lg text-sm font-medium transition-all border
-                                                        ${isSelected
-                                                            ? 'bg-amber-100 border-amber-400 text-amber-800 ring-2 ring-amber-300'
-                                                            : 'bg-gray-50 border-gray-200 text-[#343A40] hover:bg-gray-100'
-                                                        }
-                                                    `}
-                                                >
-                                                    <span className="flex items-center gap-1.5">
-                                                        💊 {med}
-                                                        <span className={`text-xs ${isSelected ? 'text-amber-600' : 'text-[#6C757D]'}`}>
-                                                            (₦{lockedAmt.toLocaleString()})
-                                                        </span>
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        }
-                        return (
-                            <div className="p-4 bg-gray-50 rounded-lg text-center">
-                                <p className="text-sm text-[#6C757D]">No existing locked medications found. Use the Deposit flow to lock funds for a new medication.</p>
-                            </div>
-                        );
-                    })()}
-
-                    {/* Show selected medication info */}
-                    {lockMedName && (() => {
-                        const selectedParentLocks = lockParentId
-                            ? (parents.find(p => p.walletId === lockParentId)?.lockedFunds || [])
-                            : allLockedFunds;
-                        const lockedAmt = selectedParentLocks
-                            .filter(l => l.medicationName === lockMedName)
-                            .reduce((s, l) => s + l.amount, 0);
-                        return (
-                            <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 flex items-center gap-3">
-                                <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">💊</div>
-                                <div>
-                                    <p className="font-semibold text-[#343A40] text-sm">{lockMedName}</p>
-                                    <p className="text-xs text-amber-700">
-                                        Currently locked: ₦{lockedAmt.toLocaleString()} · Adding more funds
-                                    </p>
-                                </div>
-                            </div>
-                        );
-                    })()}
-
-                    {/* Amount only — no duration */}
-                    {lockMedName && (
-                        <Input
-                            label="Amount to Add (₦)"
-                            type="number"
-                            placeholder="0.00"
-                            value={lockAmount}
-                            onChange={(e) => setLockAmount(e.target.value)}
-                            required
-                        />
-                    )}
-
-                    <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-                        <p className="text-xs text-amber-800">
-                            ⚠️ <strong>Early unlock fee:</strong> Unlocking before the duration expires will incur a <strong>5% penalty</strong> on the locked amount.
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <p className="text-xs text-blue-800">
+                            Locked funds can only be charged by pharmacies for medications.
                         </p>
                     </div>
 
@@ -623,12 +540,12 @@ export default function ChildDashboard() {
                         size="lg"
                         className="w-full"
                         isLoading={lockLoading}
-                        disabled={lockLoading || !lockMedName || !lockAmount || !lockParentId}
+                        disabled={lockLoading || !lockAmount || !lockParentId}
                         onClick={handleLockFunds}
                     >
                         {lockAmount && Number(lockAmount) > 0
-                            ? `Add ₦${Number(lockAmount).toLocaleString()} to ${lockMedName}`
-                            : 'Add Funds'}
+                            ? `Lock ₦${Number(lockAmount).toLocaleString()}`
+                            : 'Lock Funds'}
                     </Button>
                 </div>
             </Modal>
@@ -787,101 +704,65 @@ export default function ChildDashboard() {
                                 className="space-y-4"
                             >
                                 <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div>
-                                            <h3 className="font-semibold text-[#343A40]">Lock Funds?</h3>
-                                            <p className="text-xs text-[#6C757D]">Reserve money for specific medication</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                className="sr-only peer"
-                                                checked={isLockEnabled}
-                                                onChange={(e) => setIsLockEnabled(e.target.checked)}
-                                            />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#007BFF]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#007BFF]"></div>
-                                        </label>
+                                    <div className="mb-4">
+                                        <h3 className="font-semibold text-[#343A40]">Lock Funds (Mandatory 20% Min)</h3>
+                                        <p className="text-xs text-[#6C757D]">A minimum of 20% must be reserved for medical purposes</p>
                                     </div>
 
-                                    <AnimatePresence>
-                                        {isLockEnabled && (
-                                            <motion.div
-                                                initial={{ height: 0, opacity: 0 }}
-                                                animate={{ height: 'auto', opacity: 1 }}
-                                                exit={{ height: 0, opacity: 0 }}
-                                                className="overflow-hidden space-y-3"
-                                            >
-                                                {/* Lock all or partial */}
-                                                <div>
-                                                    <label className="block text-sm font-medium text-[#343A40] mb-2">
-                                                        How much to lock?
-                                                    </label>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setLockOption('all')}
-                                                            className={`p-3 rounded-xl border-2 text-left transition-all ${lockOption === 'all'
-                                                                ? 'border-[#007BFF] bg-[#007BFF]/5'
-                                                                : 'border-gray-200 hover:border-gray-300'
-                                                                }`}
-                                                        >
-                                                            <p className="text-sm font-semibold text-[#343A40]">Lock All</p>
-                                                            <p className="text-xs text-[#6C757D]">₦{parseInt(depositForm.amount || '0').toLocaleString()}</p>
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setLockOption('partial')}
-                                                            className={`p-3 rounded-xl border-2 text-left transition-all ${lockOption === 'partial'
-                                                                ? 'border-[#007BFF] bg-[#007BFF]/5'
-                                                                : 'border-gray-200 hover:border-gray-300'
-                                                                }`}
-                                                        >
-                                                            <p className="text-sm font-semibold text-[#343A40]">Partial Amount</p>
-                                                            <p className="text-xs text-[#6C757D]">Choose how much</p>
-                                                        </button>
-                                                    </div>
-                                                </div>
+                                    <div className="space-y-3">
+                                        {/* Lock all or partial */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-[#343A40] mb-2">
+                                                How much to lock?
+                                            </label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setLockOption('all')}
+                                                    className={`p-3 rounded-xl border-2 text-left transition-all ${lockOption === 'all'
+                                                        ? 'border-[#007BFF] bg-[#007BFF]/5'
+                                                        : 'border-gray-200 hover:border-gray-300'
+                                                        }`}
+                                                >
+                                                    <p className="text-sm font-semibold text-[#343A40]">Lock All</p>
+                                                    <p className="text-xs text-[#6C757D]">₦{parseInt(depositForm.amount || '0').toLocaleString()}</p>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setLockOption('partial');
+                                                        setDepositLockAmount(Math.max(Number(depositLockAmount) || 0, parseInt(depositForm.amount || '0') * 0.2).toString());
+                                                    }}
+                                                    className={`p-3 rounded-xl border-2 text-left transition-all ${lockOption === 'partial'
+                                                        ? 'border-[#007BFF] bg-[#007BFF]/5'
+                                                        : 'border-gray-200 hover:border-gray-300'
+                                                        }`}
+                                                >
+                                                    <p className="text-sm font-semibold text-[#343A40]">Partial Amount</p>
+                                                    <p className="text-xs text-[#6C757D]">Choose how much</p>
+                                                </button>
+                                            </div>
+                                        </div>
 
-                                                {/* Partial amount input */}
-                                                {lockOption === 'partial' && (
-                                                    <Input
-                                                        label={`Amount to Lock (max ₦${parseInt(depositForm.amount || '0').toLocaleString()})`}
-                                                        type="number"
-                                                        placeholder="0.00"
-                                                        value={depositLockAmount}
-                                                        onChange={(e) => setDepositLockAmount(e.target.value)}
-                                                        max={parseInt(depositForm.amount || '0')}
-                                                    />
-                                                )}
-
-                                                <Input
-                                                    label="Medication Name"
-                                                    placeholder="e.g. Insulin"
-                                                    value={lockMedicationName}
-                                                    onChange={(e) => setLockMedicationName(e.target.value)}
-                                                    required={isLockEnabled}
-                                                />
-                                                <Input
-                                                    label="Duration (Days)"
-                                                    type="number"
-                                                    value={lockDuration}
-                                                    onChange={(e) => setLockDuration(Number(e.target.value))}
-                                                    min={1}
-                                                    required={isLockEnabled}
-                                                />
-                                                <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                                                    ⚠️ Unlocking early incurs a 5% fee. Auto-unlocks in {lockDuration} days.
-                                                </p>
-                                            </motion.div>
+                                        {/* Partial amount input */}
+                                        {lockOption === 'partial' && (
+                                            <Input
+                                                label={`Amount to Lock (min ₦${(parseInt(depositForm.amount || '0') * 0.2).toLocaleString()})`}
+                                                type="number"
+                                                placeholder="0.00"
+                                                value={depositLockAmount}
+                                                onChange={(e) => setDepositLockAmount(e.target.value)}
+                                                min={parseInt(depositForm.amount || '0') * 0.2}
+                                                max={parseInt(depositForm.amount || '0')}
+                                                required
+                                            />
                                         )}
-                                    </AnimatePresence>
-                                </div>
 
-                                {!isLockEnabled && (
-                                    <p className="text-sm text-[#6C757D] text-center">
-                                        No funds will be locked. You can skip this step.
-                                    </p>
-                                )}
+                                        <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                                            Locked funds can only be charged directly by pharmacies for medications.
+                                        </p>
+                                    </div>
+                                </div>
                             </motion.div>
                         )}
 
@@ -916,28 +797,18 @@ export default function ChildDashboard() {
                                                 •••• {depositForm.cardNumber.slice(-4)}
                                             </span>
                                         </div>
-                                        {isLockEnabled && (
-                                            <>
-                                                <hr className="border-gray-100" />
-                                                <div className="flex justify-between">
-                                                    <span className="text-sm text-[#6C757D]">🔒 Lock Amount</span>
-                                                    <span className="text-sm font-bold text-amber-600">
-                                                        ₦{(lockOption === 'all'
-                                                            ? parseInt(depositForm.amount || '0')
-                                                            : parseInt(depositLockAmount || '0')
-                                                        ).toLocaleString()}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-sm text-[#6C757D]">Medication</span>
-                                                    <span className="text-sm font-medium text-[#343A40]">{lockMedicationName}</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-sm text-[#6C757D]">Lock Duration</span>
-                                                    <span className="text-sm font-medium text-[#343A40]">{lockDuration} days</span>
-                                                </div>
-                                            </>
-                                        )}
+                                        <>
+                                            <hr className="border-gray-100" />
+                                            <div className="flex justify-between">
+                                                <span className="text-sm text-[#6C757D]">🔒 Lock Amount</span>
+                                                <span className="text-sm font-bold text-amber-600">
+                                                    ₦{(lockOption === 'all'
+                                                        ? parseInt(depositForm.amount || '0')
+                                                        : parseInt(depositLockAmount || '0')
+                                                    ).toLocaleString()}
+                                                </span>
+                                            </div>
+                                        </>
                                     </div>
                                 </div>
                             </motion.div>

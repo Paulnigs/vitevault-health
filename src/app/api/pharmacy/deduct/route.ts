@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import { User, Wallet, Notification } from '@/lib/models';
-import mongoose from 'mongoose';
+import { Users, Wallets, Notifications, generateId } from '@/lib/indexedDB';
 
 export async function POST(request: NextRequest) {
     try {
@@ -19,48 +17,39 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Link code and valid amount are required' }, { status: 400 });
         }
 
-        await dbConnect();
-
         // 1. Verify Parent (User)
-        const parent = await User.findOne({ linkCode: linkCode.toUpperCase() });
+        const parent = Users.findByLinkCode(linkCode);
         if (!parent) {
             return NextResponse.json({ error: 'Invalid link code' }, { status: 404 });
         }
 
         // 2. Verify Wallet
-        const wallet = await Wallet.findOne({ owner: parent._id });
+        const wallet = Wallets.findByOwner(parent._id);
         if (!wallet) {
             return NextResponse.json({ error: 'Parent has no active wallet' }, { status: 404 });
         }
 
-        // 3. Smart Deduction Logic
-        let deductedFromLocked = false;
-        let lockIdToUpdate = null;
+        // ✅ KEY: Pharmacy can ONLY charge from locked funds
+        const totalLocked = Wallets.getTotalLocked(wallet);
+
+        if (totalLocked < amount) {
+            return NextResponse.json({
+                error: 'Insufficient locked funds. The pharmacy can only charge from locked funds.',
+                details: { lockedFunds: totalLocked, required: amount }
+            }, { status: 400 });
+        }
+
+        // Deduct from locked funds (proportionally from active locks)
         let remainingToDeduct = amount;
+        for (const lock of wallet.lockedFunds) {
+            if (!lock.isActive || remainingToDeduct <= 0) continue;
 
-        // Check for active lock for this medication
-        const relevantLock = wallet.lockedFunds.find(l =>
-            l.isActive &&
-            l.medicationName.toLowerCase() === medicationName?.toLowerCase() &&
-            l.amount >= remainingToDeduct && // Simpler: Full coverage required for now or partial? Let's say full.
-            new Date(l.unlocksAt) > new Date()
-        );
+            const deductFromThis = Math.min(lock.amount, remainingToDeduct);
+            lock.amount -= deductFromThis;
+            remainingToDeduct -= deductFromThis;
 
-        if (relevantLock) {
-            // Use Locked Funds
-            relevantLock.amount -= remainingToDeduct;
-            if (relevantLock.amount <= 0) { // Should not happen with >= check but safe
-                relevantLock.isActive = false;
-            }
-            deductedFromLocked = true;
-            lockIdToUpdate = relevantLock._id;
-        } else {
-            // Check Available Balance (Total - Active Locks)
-            if ((wallet as any).availableBalance < remainingToDeduct) {
-                return NextResponse.json({
-                    error: 'Insufficient available funds. Funds may be locked for other medications.',
-                    details: { available: (wallet as any).availableBalance, required: amount }
-                }, { status: 400 });
+            if (lock.amount <= 0) {
+                lock.isActive = false;
             }
         }
 
@@ -68,30 +57,30 @@ export async function POST(request: NextRequest) {
         wallet.balance -= amount;
 
         // Record Transaction
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (wallet.transactions as any).push({
+        wallet.transactions.push({
+            _id: generateId(),
             amount,
             type: 'deduction',
-            description: `Pharmacy Payment: ${medicationName || 'Medication'} ${deductedFromLocked ? '(Locked Funds)' : ''}`,
-            date: new Date(),
+            description: `Pharmacy Payment: ${medicationName || 'Medication'} (from Locked Funds)`,
+            date: new Date().toISOString(),
             schedule: 'one-time',
-            fromUserId: new mongoose.Types.ObjectId(session.user.id),
+            fromUserId: session.user.id,
         });
 
-        await wallet.save();
+        Wallets.save(wallet);
 
         // Notifications
-        await Notification.create({
+        Notifications.create({
             userId: parent._id,
             type: 'deduction',
             title: 'Pharmacy Payment Processed',
-            message: `₦${amount.toLocaleString()} paid to ${session.user.name} for ${medicationName}.`,
+            message: `₦${amount.toLocaleString()} paid to ${session.user.name} for ${medicationName || 'Medication'} (from locked funds).`,
             read: false,
             data: { walletId: wallet._id, amount, pharmacyId: session.user.id }
         });
 
         return NextResponse.json({
-            message: 'Payment processed successfully',
+            message: 'Payment processed successfully from locked funds',
             newBalance: wallet.balance,
             transactionId: wallet.transactions[wallet.transactions.length - 1]._id
         });

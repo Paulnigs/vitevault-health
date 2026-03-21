@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import { Wallet } from '@/lib/models';
+import { Wallets } from '@/lib/indexedDB';
 
 export async function GET(
     request: NextRequest,
@@ -20,9 +19,7 @@ export async function GET(
 
         const { id } = await params;
 
-        await dbConnect();
-
-        const wallet = await Wallet.findById(id).populate('owner', 'name email role');
+        const wallet = Wallets.findById(id);
 
         if (!wallet) {
             return NextResponse.json(
@@ -36,39 +33,35 @@ export async function GET(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         );
 
-        // Calculate locked funds total and available balance
-        const walletObj = wallet.toObject({ virtuals: true });
+        const availableBalance = Wallets.getAvailableBalance(wallet);
 
         return NextResponse.json({
             wallet: {
                 id: wallet._id,
                 balance: wallet.balance,
-                availableBalance: walletObj.availableBalance,
+                availableBalance,
                 currency: wallet.currency,
-                owner: typeof wallet.owner === 'object' && wallet.owner._id
-                    ? wallet.owner._id.toString()
-                    : wallet.owner.toString(),
-                transactions: sortedTransactions.map((t: any) => ({
-                    id: t._id?.toString() || t.id,
+                owner: wallet.owner,
+                transactions: sortedTransactions.map((t) => ({
+                    id: t._id,
                     amount: t.amount,
                     type: t.type,
                     date: t.date,
                     description: t.description,
                     schedule: t.schedule,
                 })),
-                lockedFunds: (wallet.lockedFunds || []).map((lf: any) => ({
-                    _id: lf._id.toString(),
-                    medicationName: lf.medicationName,
+                lockedFunds: (wallet.lockedFunds || []).map((lf) => ({
+                    _id: lf._id,
                     amount: lf.amount,
                     lockedAt: lf.lockedAt,
                     unlocksAt: lf.unlocksAt,
                     isActive: lf.isActive,
+                    description: lf.description || '',
                 })),
                 scheduledDeposits: wallet.scheduledDeposits.filter((d) => d.isActive),
                 createdAt: wallet.createdAt,
                 updatedAt: wallet.updatedAt,
             },
-            // Also keep top-level fields for backward compatibility
             id: wallet._id,
             balance: wallet.balance,
             currency: wallet.currency,

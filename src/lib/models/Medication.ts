@@ -20,10 +20,13 @@ export interface IMedication extends Document {
     refillRequestedBy?: mongoose.Types.ObjectId; // parent who requested
     // Real countdown
     countdownEndDate?: Date; // The exact date/time when medication runs out
+    countdownActive: boolean; // Is the countdown currently running?
+    lockedFundId?: mongoose.Types.ObjectId; // Reference to the locked fund in wallet
     createdAt: Date;
     updatedAt: Date;
     // Virtual
     countdownDays?: number;
+    daysRemaining?: number;
     // Methods
     consumeDaily(): number;
     refill(): void;
@@ -94,6 +97,14 @@ const MedicationSchema = new Schema<IMedication>(
         countdownEndDate: {
             type: Date,
         },
+        countdownActive: {
+            type: Boolean,
+            default: false,
+        },
+        lockedFundId: {
+            type: Schema.Types.ObjectId,
+            ref: 'LockedFund',
+        },
     },
     {
         timestamps: true,
@@ -105,6 +116,17 @@ const MedicationSchema = new Schema<IMedication>(
 // Virtual: Calculate days until medication runs out
 // Uses countdownEndDate if available, otherwise falls back to qty-based
 MedicationSchema.virtual('countdownDays').get(function () {
+    if (this.countdownEndDate) {
+        const msLeft = new Date(this.countdownEndDate).getTime() - Date.now();
+        if (msLeft <= 0) return 0;
+        return Math.floor(msLeft / (1000 * 60 * 60 * 24));
+    }
+    if (this.usageRate <= 0) return 999;
+    return Math.floor(this.remainingQty / this.usageRate);
+});
+
+// Alias for countdownDays
+MedicationSchema.virtual('daysRemaining').get(function () {
     if (this.countdownEndDate) {
         const msLeft = new Date(this.countdownEndDate).getTime() - Date.now();
         if (msLeft <= 0) return 0;
@@ -132,6 +154,7 @@ MedicationSchema.methods.refill = function () {
     this.refillStatus = 'none';
     this.refillRequestedAt = undefined;
     this.refillRequestedBy = undefined;
+    this.countdownActive = true; // Activate countdown
     // Set real countdown end date
     if (this.usageRate > 0) {
         const daysSupply = Math.floor(this.totalQty / this.usageRate);

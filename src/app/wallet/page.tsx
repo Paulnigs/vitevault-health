@@ -48,16 +48,6 @@ export default function WalletPage() {
     const [lockDuration, setLockDuration] = useState('30');
     const [lockLoading, setLockLoading] = useState(false);
 
-    // Emergency Unlock state
-    const [showUnlockConfirm, setShowUnlockConfirm] = useState(false);
-    const [unlockTarget, setUnlockTarget] = useState<{
-        lockId: string;
-        walletId: string;
-        medicationName: string;
-        amount: number;
-    } | null>(null);
-    const [unlockLoading, setUnlockLoading] = useState(false);
-
     useEffect(() => {
         if (status === 'unauthenticated') {
             router.push('/login');
@@ -172,37 +162,7 @@ export default function WalletPage() {
         }
     };
 
-    // ── Emergency Unlock Handler ──
-    const handleEmergencyUnlock = async () => {
-        if (!unlockTarget) return;
-        setUnlockLoading(true);
-        try {
-            const res = await fetch(`/api/wallet/${unlockTarget.walletId}/lock`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'emergency_unlock',
-                    lockId: unlockTarget.lockId,
-                }),
-            });
-            const data = await res.json();
-            if (res.ok) {
-                toast.success(
-                    `Unlocked! Fee: ₦${data.fee?.toLocaleString() || '0'}`,
-                    { icon: '🔓', duration: 5000 }
-                );
-                setShowUnlockConfirm(false);
-                setUnlockTarget(null);
-                await fetchWalletData();
-            } else {
-                toast.error(data.error || 'Failed to unlock');
-            }
-        } catch {
-            toast.error('Network error');
-        } finally {
-            setUnlockLoading(false);
-        }
-    };
+
 
     if (loading || status === 'loading') {
         return (
@@ -441,21 +401,6 @@ export default function WalletPage() {
                                                             {daysLeft} day{daysLeft !== 1 ? 's' : ''} left
                                                         </p>
                                                     </div>
-                                                    <button
-                                                        onClick={() => {
-                                                            setUnlockTarget({
-                                                                lockId: lock.id,
-                                                                walletId: lock.walletId,
-                                                                medicationName: lock.medicationName,
-                                                                amount: lock.amount,
-                                                            });
-                                                            setShowUnlockConfirm(true);
-                                                        }}
-                                                        className="px-2 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200"
-                                                        title={`Emergency unlock — 5% fee (₦${fee.toLocaleString()})`}
-                                                    >
-                                                        🔓 Unlock
-                                                    </button>
                                                 </div>
                                             </div>
                                             {/* Timer progress bar */}
@@ -707,16 +652,7 @@ export default function WalletPage() {
                         );
                     })()}
 
-                    <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-                        <p className="text-xs text-amber-800">
-                            ⚠️ <strong>Early unlock fee:</strong> Unlocking before the duration expires will incur a <strong>5% penalty</strong> on the locked amount.
-                        </p>
-                        {lockAmount && Number(lockAmount) > 0 && (
-                            <p className="text-xs text-amber-700 mt-1">
-                                Penalty if unlocked early: <strong>₦{(Number(lockAmount) * 0.05).toLocaleString()}</strong>
-                            </p>
-                        )}
-                    </div>
+
 
                     <Button
                         variant="primary"
@@ -746,72 +682,7 @@ export default function WalletPage() {
                 </div>
             </Modal>
 
-            {/* ══════════ EMERGENCY UNLOCK CONFIRMATION ══════════ */}
-            <Modal
-                isOpen={showUnlockConfirm}
-                onClose={() => {
-                    setShowUnlockConfirm(false);
-                    setUnlockTarget(null);
-                }}
-                title="⚠️ Emergency Unlock"
-            >
-                {unlockTarget && (
-                    <div className="space-y-4">
-                        <div className="p-4 bg-red-50 rounded-xl border border-red-200">
-                            <p className="text-sm text-red-800 font-medium mb-3">
-                                Are you sure you want to unlock these funds early?
-                            </p>
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-red-700">Medication:</span>
-                                    <span className="font-medium text-red-900">{unlockTarget.medicationName}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-red-700">Locked Amount:</span>
-                                    <span className="font-medium text-red-900">₦{unlockTarget.amount.toLocaleString()}</span>
-                                </div>
-                                <hr className="border-red-200" />
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-red-700">5% Penalty Fee:</span>
-                                    <span className="font-bold text-red-900">
-                                        -₦{(unlockTarget.amount * 0.05).toLocaleString()}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-red-700">You get back:</span>
-                                    <span className="font-bold text-green-700">
-                                        ₦{(unlockTarget.amount * 0.95).toLocaleString()}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
 
-                        <p className="text-xs text-[#6C757D] text-center">
-                            This action cannot be undone. The 5% fee will be deducted from your wallet balance.
-                        </p>
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <Button
-                                variant="outline"
-                                onClick={() => {
-                                    setShowUnlockConfirm(false);
-                                    setUnlockTarget(null);
-                                }}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                variant="primary"
-                                isLoading={unlockLoading}
-                                onClick={handleEmergencyUnlock}
-                                className="bg-red-600! hover:bg-red-700!"
-                            >
-                                🔓 Unlock Now
-                            </Button>
-                        </div>
-                    </div>
-                )}
-            </Modal>
         </div>
     );
 }

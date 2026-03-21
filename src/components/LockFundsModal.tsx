@@ -14,9 +14,7 @@ interface LockFundsModalProps {
 }
 
 export default function LockFundsModal({ isOpen, onClose, walletId, availableBalance, onSuccess }: LockFundsModalProps) {
-    const [medicationName, setMedicationName] = useState('');
     const [amount, setAmount] = useState<string>('');
-    const [duration, setDuration] = useState('30');
     const [isLoading, setIsLoading] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -38,9 +36,7 @@ export default function LockFundsModal({ isOpen, onClose, walletId, availableBal
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'create',
-                    medicationName,
-                    amount: Number(amount),
-                    durationDays: Number(duration)
+                    amount: Number(amount)
                 }),
             });
 
@@ -50,9 +46,8 @@ export default function LockFundsModal({ isOpen, onClose, walletId, availableBal
                 toast.success('Funds locked successfully', { icon: '🔒' });
                 onSuccess();
                 onClose();
-                setMedicationName('');
+                onClose();
                 setAmount('');
-                setDuration('30');
             } else {
                 showError(data.error || 'Failed to lock funds');
             }
@@ -67,22 +62,14 @@ export default function LockFundsModal({ isOpen, onClose, walletId, availableBal
         <Modal isOpen={isOpen} onClose={onClose} title="Lock Funds">
             <form onSubmit={handleSubmit} className="space-y-4">
                 <p className="text-sm text-gray-500">
-                    Reserve funds for specific medication. Calls for emergency unlock incur a 5% fee.
+                    Lock funds securely. Locked funds can only be charged by pharmacies for medications.
                 </p>
 
                 <div className="p-3 bg-blue-50 rounded-lg text-blue-800 text-sm font-medium mb-2">
                     Available to Lock: ₦{availableBalance.toLocaleString()}
                 </div>
 
-                <Input
-                    label="Medication Name"
-                    placeholder="e.g. Insulin"
-                    value={medicationName}
-                    onChange={(e) => setMedicationName(e.target.value)}
-                    required
-                />
-
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                     <Input
                         label="Amount (₦)"
                         type="number"
@@ -92,21 +79,13 @@ export default function LockFundsModal({ isOpen, onClose, walletId, availableBal
                         max={availableBalance}
                         required
                     />
-                    <Input
-                        label="Duration (Days)"
-                        type="number"
-                        value={duration}
-                        onChange={(e) => setDuration(e.target.value)}
-                        min="1"
-                        required
-                    />
                 </div>
 
                 <Button
                     type="submit"
                     className="w-full"
                     isLoading={isLoading}
-                    disabled={isLoading || !medicationName || !amount}
+                    disabled={isLoading || !amount}
                 >
                     Lock Funds
                 </Button>

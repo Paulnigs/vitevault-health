@@ -9,7 +9,7 @@ import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { useRealtime } from '@/hooks/useRealtime';
 import DepositModal from '@/components/DepositModal';
-import FastForwardButton from '@/components/FastForwardButton';
+import WithdrawModal from '@/components/WithdrawModal';
 
 interface Medication {
     id: string;
@@ -18,8 +18,9 @@ interface Medication {
     totalDays: number;
     refillCost: number;
     remainingQty: number;
-    refillStatus: 'none' | 'requested' | 'approved';
+    refillStatus: 'none' | 'pending_approval' | 'approved';
     countdownEndDate: string | null;
+    countdownActive: boolean;
 }
 
 interface Child {
@@ -43,7 +44,9 @@ interface ActivityItem {
 
 interface WalletData {
     id: string;
-    balance: number;
+    balance: number; // Total balance
+    availableBalance: number; // Can be withdrawn
+    lockedFunds: number; // Locked for medications only
     currency: string;
     lastDeposit: {
         amount: number;
@@ -73,6 +76,7 @@ export default function ParentDashboard() {
     const [loading, setLoading] = useState(true);
     const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+    const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
     const [refillLoading, setRefillLoading] = useState<string | null>(null);
 
     // Setup real-time updates
@@ -194,19 +198,20 @@ export default function ParentDashboard() {
             <Card className="mb-8 gradient-hero text-white">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <p className="text-white/80 text-sm mb-1">Wallet Balance</p>
+                        <p className="text-white/80 text-sm mb-1">Total Wallet Balance</p>
                         <p className="text-4xl md:text-5xl font-bold">
                             ₦{(wallet?.balance || 0).toLocaleString()}
                         </p>
-                        {wallet?.lastDeposit ? (
-                            <p className="text-white/70 text-sm mt-2">
-                                Last deposit: ₦{wallet.lastDeposit.amount.toLocaleString()}
+                        <div className="mt-3 bg-white/10 rounded-lg p-3 backdrop-blur-sm inline-block">
+                            <p className="text-white/90 text-sm font-medium flex justify-between gap-4">
+                                <span>Available to Withdraw:</span>
+                                <span>₦{(wallet?.availableBalance || 0).toLocaleString()}</span>
                             </p>
-                        ) : (
-                            <p className="text-white/70 text-sm mt-2">
-                                No deposits yet
+                            <p className="text-white/80 text-sm flex justify-between gap-4 mt-1">
+                                <span>Locked for Pharmacy:</span>
+                                <span>₦{(wallet?.lockedFunds || 0).toLocaleString()}</span>
                             </p>
-                        )}
+                        </div>
                     </div>
                     <div className="flex items-center gap-2">
                         {wallet && (
@@ -218,9 +223,16 @@ export default function ParentDashboard() {
                                 >
                                     💰 Deposit
                                 </Button>
+                                <Button
+                                    variant="outline"
+                                    className="bg-transparent border-white/30 text-white hover:bg-white/10"
+                                    onClick={() => setIsWithdrawModalOpen(true)}
+                                >
+                                    🏦 Withdraw
+                                </Button>
                                 <Link href={`/wallet/${wallet.id}`}>
                                     <Button variant="outline" className="bg-white/20 border-white/30 text-white hover:bg-white/30">
-                                        View Details
+                                        Details
                                     </Button>
                                 </Link>
                             </>
@@ -282,14 +294,21 @@ export default function ParentDashboard() {
                                         </p>
 
                                         {/* Refill status badge */}
-                                        {med.refillStatus === 'requested' && (
+                                        {med.refillStatus === 'pending_approval' && (
                                             <div className="mb-3 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
                                                 ⏳ Refill Pending (awaiting pharmacy)
                                             </div>
                                         )}
                                         {med.refillStatus === 'approved' && (
-                                            <div className="mb-3 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
-                                                ✅ Refill Approved
+                                            <div className="mb-3 space-y-1">
+                                                <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                                                    ✅ Active & Approved
+                                                </div>
+                                                {med.countdownActive && (
+                                                    <div className="block text-[11px] font-medium bg-blue-100 text-blue-700 px-2 py-1 rounded-full border border-blue-200">
+                                                        ⏱️ Countdown Running
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 
@@ -336,17 +355,6 @@ export default function ParentDashboard() {
                                                 )}
                                             </div>
                                         )}
-
-                                        {/* Simulation: Fast Forward for testing */}
-                                        <div className="w-full flex justify-center">
-                                            <FastForwardButton
-                                                medicationId={med.id}
-                                                medicationName={med.name}
-                                                currentDays={med.daysRemaining}
-                                                refillCost={med.refillCost}
-                                                onUpdate={() => fetchDashboardData()}
-                                            />
-                                        </div>
                                     </div>
                                 </Card>
                             </motion.div>
@@ -493,6 +501,17 @@ export default function ParentDashboard() {
                     isOpen={isDepositModalOpen}
                     onClose={() => setIsDepositModalOpen(false)}
                     walletId={wallet.id}
+                    onSuccess={() => fetchDashboardData()}
+                />
+            )}
+
+            {/* Withdraw Modal */}
+            {wallet && (
+                <WithdrawModal
+                    isOpen={isWithdrawModalOpen}
+                    onClose={() => setIsWithdrawModalOpen(false)}
+                    walletId={wallet.id}
+                    availableBalance={wallet.availableBalance}
                     onSuccess={() => fetchDashboardData()}
                 />
             )}

@@ -16,21 +16,22 @@ export interface ITransaction {
 
 export interface ILockedFund {
     _id: mongoose.Types.ObjectId;
-    medicationId?: mongoose.Types.ObjectId;
+    medicationId: mongoose.Types.ObjectId; // Required reference to the medication
     medicationName: string;
     amount: number;
     lockedAt: Date;
-    unlocksAt: Date;
+    unlocksAt: Date; // When the countdown expires
     isActive: boolean;
+    chargedAt?: Date; // When it was charged from wallet
 }
 
 export interface IWallet extends Document {
     _id: mongoose.Types.ObjectId;
     owner: mongoose.Types.ObjectId; // Parent userId
-    balance: number;
+    balance: number; // Total balance (availableBalance + lockedFunds)
     currency: string;
     transactions: ITransaction[];
-    lockedFunds: ILockedFund[];
+    lockedFunds: ILockedFund[]; // Funds locked for medications only
     scheduledDeposits: {
         amount: number;
         schedule: ScheduleType;
@@ -40,8 +41,9 @@ export interface IWallet extends Document {
     }[];
     createdAt: Date;
     updatedAt: Date;
-    // Virtual property: Total balance minus active locked funds
-    readonly availableBalance?: number;
+    // Virtual properties
+    readonly availableBalance?: number; // balance - totalLockedFunds
+    readonly totalLockedFunds?: number; // Sum of all active locked funds
 }
 
 const TransactionSchema = new Schema<ITransaction>({
@@ -82,6 +84,7 @@ const LockedFundSchema = new Schema<ILockedFund>({
     medicationId: {
         type: Schema.Types.ObjectId,
         ref: 'Medication',
+        required: true, // Now required
     },
     medicationName: {
         type: String,
@@ -103,6 +106,9 @@ const LockedFundSchema = new Schema<ILockedFund>({
     isActive: {
         type: Boolean,
         default: true,
+    },
+    chargedAt: {
+        type: Date,
     },
 });
 
@@ -176,6 +182,12 @@ WalletSchema.methods.addTransaction = function (
 };
 
 // Helper: Get available balance (Total - Active Locked Funds)
+WalletSchema.virtual('totalLockedFunds').get(function () {
+    return this.lockedFunds
+        .filter((fund) => fund.isActive && fund.unlocksAt > new Date())
+        .reduce((sum, fund) => sum + fund.amount, 0);
+});
+
 WalletSchema.virtual('availableBalance').get(function () {
     const lockedTotal = this.lockedFunds
         .filter((fund) => fund.isActive && fund.unlocksAt > new Date())

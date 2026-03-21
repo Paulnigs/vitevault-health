@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import { User } from '@/lib/models';
+import { Users } from '@/lib/indexedDB';
 
 export async function POST(request: NextRequest) {
     try {
@@ -16,7 +15,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { linkCode, linkType } = body;
+        const { linkCode } = body;
 
         if (!linkCode) {
             return NextResponse.json(
@@ -25,9 +24,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        await dbConnect();
-
-        const currentUser = await User.findById(session.user.id);
+        const currentUser = Users.findById(session.user.id);
         if (!currentUser) {
             return NextResponse.json(
                 { error: 'Current user not found' },
@@ -36,7 +33,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Find user with the link code
-        const targetUser = await User.findOne({ linkCode: linkCode.toUpperCase() });
+        const targetUser = Users.findByLinkCode(linkCode);
         if (!targetUser) {
             return NextResponse.json(
                 { error: 'No user found with this link code' },
@@ -45,7 +42,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Prevent self-linking
-        if (targetUser._id.toString() === currentUser._id.toString()) {
+        if (targetUser._id === currentUser._id) {
             return NextResponse.json(
                 { error: 'Cannot link to yourself' },
                 { status: 400 }
@@ -56,10 +53,6 @@ export async function POST(request: NextRequest) {
         const currentRole = currentUser.role;
         const targetRole = targetUser.role;
 
-        // Valid links:
-        // - child -> parent
-        // - parent -> pharmacy
-        // - pharmacy -> parent
         const validLinks: Record<string, string[]> = {
             child: ['parent'],
             parent: ['pharmacy', 'child'],
@@ -82,11 +75,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Add bidirectional link
-        currentUser.links.push(targetUser._id);
-        targetUser.links.push(currentUser._id);
-
-        await currentUser.save();
-        await targetUser.save();
+        Users.update(currentUser._id, {
+            links: [...currentUser.links, targetUser._id],
+        });
+        Users.update(targetUser._id, {
+            links: [...targetUser.links, currentUser._id],
+        });
 
         return NextResponse.json({
             message: 'Link created successfully',
@@ -106,7 +100,7 @@ export async function POST(request: NextRequest) {
     }
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
     try {
         const session = await getServerSession(authOptions);
 
@@ -117,10 +111,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        await dbConnect();
-
-        const user = await User.findById(session.user.id)
-            .populate('links', 'name email role avatar');
+        const user = Users.findById(session.user.id);
 
         if (!user) {
             return NextResponse.json(
@@ -129,9 +120,17 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        const linkedUsers = Users.findByIds(user.links || []).map(u => ({
+            _id: u._id,
+            name: u.name,
+            email: u.email,
+            role: u.role,
+            avatar: u.avatar,
+        }));
+
         return NextResponse.json({
             linkCode: user.linkCode,
-            links: user.links,
+            links: linkedUsers,
         });
     } catch (error) {
         console.error('Get links error:', error);

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import dbConnect from '@/lib/db';
-import { User, Wallet } from '@/lib/models';
+import { Users, Wallets } from '@/lib/indexedDB';
 
 export async function POST(request: NextRequest) {
     try {
@@ -30,10 +29,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        await dbConnect();
-
         // Check if user already exists
-        const existingUser = await User.findOne({ email: email.toLowerCase() });
+        const existingUser = Users.findByEmail(email);
         if (existingUser) {
             return NextResponse.json(
                 { error: 'Email already registered' },
@@ -45,7 +42,7 @@ export async function POST(request: NextRequest) {
         const passwordHash = await bcrypt.hash(password, 12);
 
         // Create user
-        const user = await User.create({
+        const user = Users.create({
             email: email.toLowerCase(),
             passwordHash,
             name,
@@ -54,11 +51,11 @@ export async function POST(request: NextRequest) {
 
         // If parent, create a wallet
         if (role === 'parent') {
-            await Wallet.create({
+            const wallet = Wallets.create({
                 owner: user._id,
                 balance: 0,
-                transactions: [],
             });
+            Users.update(user._id, { walletId: wallet._id });
         }
 
         return NextResponse.json(

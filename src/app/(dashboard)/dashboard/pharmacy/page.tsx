@@ -18,6 +18,7 @@ interface Medication {
     status: string;
     refillStatus: string;
     countdownEndDate: string | null;
+    countdownActive: boolean;
 }
 
 interface Patient {
@@ -25,6 +26,8 @@ interface Patient {
     name: string;
     linkCode?: string;
     walletBalance: number;
+    availableBalance: number;
+    lockedFunds: number;
     medications: Medication[];
 }
 
@@ -308,13 +311,14 @@ export default function PharmacyDashboard() {
                                         </div>
                                         <div>
                                             <p className="font-bold text-[#343A40]">{patient.name}</p>
-                                            <p className="text-xs text-[#6C757D]">
-                                                Balance: <span className="font-semibold text-[#28A745]">₦{patient.walletBalance.toLocaleString()}</span>
-                                            </p>
+                                            <div className="text-xs text-[#6C757D] space-y-0.5">
+                                                <p>Available: <span className="font-semibold text-[#28A745]">₦{patient.availableBalance.toLocaleString()}</span></p>
+                                                <p>Locked: <span className="font-semibold text-[#FFC107]">₦{patient.lockedFunds.toLocaleString()}</span></p>
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        {patient.medications.some(m => m.refillStatus === 'requested') && (
+                                        {patient.medications.some(m => m.refillStatus === 'pending_approval') && (
                                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                                                 ⏳ Pending Refill
                                             </span>
@@ -358,20 +362,29 @@ export default function PharmacyDashboard() {
                                                     />
                                                     <p className="text-xs font-semibold text-[#343A40] mt-2">{med.name}</p>
                                                     <p className="text-[10px] text-[#6C757D]">₦{med.refillCost.toLocaleString()}</p>
-                                                    {/* Status badge */}
-                                                    {med.refillStatus === 'requested' ? (
-                                                        <span className="mt-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800">
-                                                            ⏳ Pending
-                                                        </span>
-                                                    ) : med.status === 'active' ? (
-                                                        <span className="mt-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-700">
-                                                            ✓ Active
-                                                        </span>
-                                                    ) : (
-                                                        <span className="mt-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
-                                                            ⚠ Depleted
-                                                        </span>
-                                                    )}
+                                                    {/* Status and countdown indicator */}
+                                                    <div className="w-full space-y-1 mt-1">
+                                                        {med.refillStatus === 'pending_approval' ? (
+                                                            <span className="block text-[10px] font-medium bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">
+                                                                ⏳ Pending Approval
+                                                            </span>
+                                                        ) : med.status === 'active' ? (
+                                                            <>
+                                                                <span className="block text-[10px] font-medium bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
+                                                                    ✓ Active
+                                                                </span>
+                                                                {med.countdownActive && (
+                                                                    <span className="block text-[9px] font-medium bg-blue-100 text-blue-700 px-1 py-0.5 rounded-full">
+                                                                        ⏱️ Countdown Running
+                                                                    </span>
+                                                                )}
+                                                            </>
+                                                        ) : (
+                                                            <span className="block text-[10px] font-medium bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">
+                                                                ⚠ Depleted
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}

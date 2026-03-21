@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import { User, Medication, Wallet, Notification } from '@/lib/models';
+import { Users, Wallets, Medications, Notifications } from '@/lib/indexedDB';
 
 export async function POST(request: NextRequest) {
     try {
@@ -25,9 +24,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        await dbConnect();
-
-        const medication = await Medication.findById(medicationId);
+        const medication = Medications.findById(medicationId);
 
         if (!medication) {
             return NextResponse.json(
@@ -36,7 +33,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (medication.refillStatus !== 'requested') {
+        if (medication.refillStatus !== 'pending_approval') {
             return NextResponse.json(
                 { error: 'This medication does not have a pending refill request' },
                 { status: 400 }
@@ -44,7 +41,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Get the wallet
-        const wallet = await Wallet.findById(medication.walletId);
+        const wallet = Wallets.findById(medication.walletId);
         if (!wallet) {
             return NextResponse.json(
                 { error: 'Associated wallet not found' },
@@ -52,87 +49,52 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Check for locked funds for this medication and release them
-        let unlockedAmount = 0;
-        const matchingLocks = wallet.lockedFunds.filter(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (lock: any) =>
-                lock.isActive &&
-                (lock.medicationName === medication.name ||
-                    (lock.medicationId && lock.medicationId.toString() === medication._id.toString()))
-        );
+        // ✅ KEY CHANGE: NO automatic deduction on approval
+        // The pharmacy will manually charge from locked funds when countdown expires
 
-        if (matchingLocks.length > 0) {
-            for (const lock of matchingLocks) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                (lock as any).isActive = false;
-                unlockedAmount += lock.amount;
-            }
-        }
+        // Calculate countdown end date (when medication will run out)
+        const daysSupply = medication.usageRate > 0
+            ? Math.floor(medication.totalQty / medication.usageRate)
+            : 30;
+        const countdownEndDate = new Date(Date.now() + daysSupply * 24 * 60 * 60 * 1000);
 
-        // Check if wallet has enough balance for refill
-        if (wallet.balance < medication.refillCost) {
-            // Save unlock changes even if insufficient
-            await wallet.save();
-            return NextResponse.json(
-                {
-                    error: 'Insufficient wallet balance for refill',
-                    currentBalance: wallet.balance,
-                    refillCost: medication.refillCost,
-                    unlockedAmount,
-                },
-                { status: 402 }
-            );
-        }
-
-        // Deduct refill cost from wallet
-        wallet.balance -= medication.refillCost;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (wallet.transactions as any).push({
-            amount: medication.refillCost,
-            type: 'deduction',
-            description: `Refill approved by ${session.user.name} for ${medication.name}${unlockedAmount > 0 ? ` (₦${unlockedAmount.toLocaleString()} from locked funds)` : ''}`,
-            date: new Date(),
-            schedule: 'one-time',
-            medicationId: medication._id,
+        // Update medication: approve and start countdown
+        Medications.update(medicationId, {
+            refillStatus: 'approved',
+            countdownActive: true,
+            countdownEndDate: countdownEndDate.toISOString(),
+            remainingQty: medication.totalQty,
+            lastRefillDate: new Date().toISOString(),
         });
 
-        await wallet.save();
-
-        // Refill the medication (resets qty, countdown, status)
-        medication.refill();
-        medication.refillStatus = 'approved';
-
-        await medication.save();
+        const updatedMed = Medications.findById(medicationId)!;
 
         // Notify the parent
-        await Notification.create({
+        Notifications.create({
             userId: wallet.owner,
             type: 'refill',
-            title: 'Refill Approved! 💊',
-            message: `${session.user.name} approved your refill for "${medication.name}". ₦${medication.refillCost.toLocaleString()} was deducted.${unlockedAmount > 0 ? ` ₦${unlockedAmount.toLocaleString()} was released from locked funds.` : ''}`,
+            title: 'Medication Approved! 💊',
+            message: `${session.user.name} approved your medication "${medication.name}". The countdown has started (${daysSupply} days).`,
             read: false,
             data: {
                 medicationId: medication._id,
-                amount: medication.refillCost,
                 walletId: wallet._id,
                 pharmacyId: session.user.id,
-                unlockedAmount,
+                daysSupply,
             },
         });
 
         return NextResponse.json({
-            message: `Refill approved for ${medication.name}!`,
+            message: `Medication "${medication.name}" approved! Countdown started.`,
             medication: {
-                id: medication._id,
-                name: medication.name,
-                refillStatus: medication.refillStatus,
-                remainingQty: medication.remainingQty,
-                countdownDays: medication.countdownDays,
+                id: updatedMed._id,
+                name: updatedMed.name,
+                refillStatus: updatedMed.refillStatus,
+                remainingQty: updatedMed.remainingQty,
+                countdownDays: daysSupply,
+                countdownActive: updatedMed.countdownActive,
+                countdownEndDate: updatedMed.countdownEndDate,
             },
-            deductedAmount: medication.refillCost,
-            newBalance: wallet.balance,
-            unlockedAmount,
         });
     } catch (error) {
         console.error('Refill approve error:', error);

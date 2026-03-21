@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import { Medication, Wallet } from '@/lib/models';
+import { Users, Wallets, Medications, Notifications, generateId } from '@/lib/indexedDB';
 
 // GET all medications for a wallet
 export async function GET(request: NextRequest) {
@@ -19,16 +18,14 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const walletId = searchParams.get('walletId');
 
-        await dbConnect();
-
-        const filter: Record<string, unknown> = { isActive: true };
+        let medications;
         if (walletId) {
-            filter.walletId = walletId;
+            medications = Medications.findByWalletId(walletId, true);
+        } else {
+            // Return all medications for user's wallet
+            const wallet = Wallets.findByOwner(session.user.id);
+            medications = wallet ? Medications.findByWalletId(wallet._id, true) : [];
         }
-
-        const medications = await Medication.find(filter)
-            .populate('pharmacyId', 'name email')
-            .sort({ createdAt: -1 });
 
         return NextResponse.json({ medications });
     } catch (error) {
@@ -40,7 +37,7 @@ export async function GET(request: NextRequest) {
     }
 }
 
-// POST create new medication
+// POST create new medication — automatically sends refill request to pharmacy
 export async function POST(request: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
@@ -63,10 +60,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        await dbConnect();
-
         // Verify wallet exists
-        const wallet = await Wallet.findById(walletId);
+        const wallet = Wallets.findById(walletId);
         if (!wallet) {
             return NextResponse.json(
                 { error: 'Wallet not found' },
@@ -74,10 +69,31 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Calculate countdown days
-        const countdownDays = Math.floor(quantity / usageRate);
+        // Get the parent user (wallet owner)
+        const parent = Users.findById(wallet.owner);
+        if (!parent) {
+            return NextResponse.json(
+                { error: 'Parent user not found' },
+                { status: 404 }
+            );
+        }
 
-        const medication = await Medication.create({
+        // Find connected pharmacies
+        const pharmacies = Users.findByIdsAndRole(parent.links || [], 'pharmacy');
+
+        if (pharmacies.length === 0) {
+            return NextResponse.json(
+                { error: 'No connected pharmacy. Please connect to a pharmacy first before adding medications.' },
+                { status: 400 }
+            );
+        }
+
+        // Use specified pharmacy or first connected pharmacy
+        const targetPharmacyId = pharmacyId || pharmacies[0]._id;
+        const targetPharmacy = pharmacies.find(p => p._id === targetPharmacyId) || pharmacies[0];
+
+        // Create medication with pending_approval status (NOT approved yet)
+        const medication = Medications.create({
             name,
             description,
             remainingQty: quantity,
@@ -85,14 +101,52 @@ export async function POST(request: NextRequest) {
             usageRate,
             refillCost,
             walletId,
-            pharmacyId,
+            pharmacyId: targetPharmacy._id,
+            lastRefillDate: new Date().toISOString(),
+            isActive: true,
+            // ✅ KEY: Medication starts as pending_approval — pharmacy must approve first
+            refillStatus: 'pending_approval',
+            refillRequestedAt: new Date().toISOString(),
+            refillRequestedBy: parent._id,
+            // Countdown does NOT start yet
+            countdownActive: false,
         });
+
+        // Notify the pharmacy about the new medication request
+        Notifications.create({
+            userId: targetPharmacy._id,
+            type: 'refill',
+            title: 'New Medication Request',
+            message: `${parent.name} has added a new medication "${name}" and is requesting approval. Refill cost: ₦${refillCost.toLocaleString()}.`,
+            read: false,
+            data: {
+                medicationId: medication._id,
+                parentId: parent._id,
+                walletId: wallet._id,
+                amount: refillCost,
+            },
+        });
+
+        // Notify the parent that request was sent
+        Notifications.create({
+            userId: parent._id,
+            type: 'refill',
+            title: 'Medication Request Sent',
+            message: `Your medication "${name}" request has been sent to ${targetPharmacy.name} for approval.`,
+            read: false,
+            data: {
+                medicationId: medication._id,
+                pharmacyName: targetPharmacy.name,
+            },
+        });
+
+        const countdownDays = Math.floor(quantity / usageRate);
 
         return NextResponse.json(
             {
-                message: 'Medication added successfully',
+                message: `Medication "${name}" added! Refill request sent to ${targetPharmacy.name} for approval.`,
                 medication: {
-                    ...medication.toObject(),
+                    ...medication,
                     countdownDays,
                 },
             },
