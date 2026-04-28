@@ -85,14 +85,21 @@ export async function POST(request: NextRequest) {
                 const unlockDate = new Date();
                 unlockDate.setFullYear(unlockDate.getFullYear() + 10);
 
-                wallet.lockedFunds.push({
-                    _id: generateId(),
-                    amount: lockAmount,
-                    lockedAt: new Date().toISOString(),
-                    unlocksAt: unlockDate.toISOString(),
-                    isActive: true,
-                    description: lockSettings.description || 'Locked funds',
-                });
+                const existingLock = wallet.lockedFunds.find(f => f.isActive);
+                
+                if (existingLock) {
+                    existingLock.amount += lockAmount;
+                    existingLock.description = lockSettings.description || existingLock.description || 'Medical Reserve';
+                } else {
+                    wallet.lockedFunds.push({
+                        _id: generateId(),
+                        amount: lockAmount,
+                        lockedAt: new Date().toISOString(),
+                        unlocksAt: unlockDate.toISOString(),
+                        isActive: true,
+                        description: lockSettings.description || 'Medical Reserve',
+                    });
+                }
             }
         }
 

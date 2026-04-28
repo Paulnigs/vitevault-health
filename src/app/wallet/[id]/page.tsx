@@ -7,7 +7,6 @@ import { Card, Button, Skeleton } from '@/components/ui';
 import { useRealtime } from '@/hooks/useRealtime';
 import toast from 'react-hot-toast';
 import { AnimatePresence } from 'framer-motion';
-import LockFundsModal from '@/components/LockFundsModal';
 import WithdrawModal from '@/components/WithdrawModal';
 import {
     Chart as ChartJS,
@@ -44,7 +43,7 @@ interface Transaction {
 
 interface LockedFund {
     _id: string;
-    medicationName: string;
+    description?: string;
     amount: number;
     lockedAt: string;
     unlocksAt: string;
@@ -67,7 +66,6 @@ export default function WalletPage() {
     const [wallet, setWallet] = useState<Wallet | null>(null);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'deposit' | 'deduction'>('all');
-    const [showLockModal, setShowLockModal] = useState(false);
     const [showWithdrawModal, setShowWithdrawModal] = useState(false);
 
 
@@ -231,13 +229,6 @@ export default function WalletPage() {
                                         🏦 Withdraw
                                     </Button>
                                     <Button
-                                        variant="secondary"
-                                        className="bg-white/20 hover:bg-white/30 text-white border-white/30"
-                                        onClick={() => setShowLockModal(true)}
-                                    >
-                                        🔒 Lock Funds
-                                    </Button>
-                                    <Button
                                         variant="outline"
                                         className="border-white/30 text-white hover:bg-white/10"
                                     >
@@ -264,7 +255,7 @@ export default function WalletPage() {
                                     wallet.lockedFunds?.filter(l => l.isActive).map(lock => (
                                         <div key={lock._id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-100">
                                             <div>
-                                                <p className="font-medium text-sm">{lock.medicationName}</p>
+                                                <p className="font-medium text-sm">{lock.description || 'Medical Reserve'}</p>
                                                 <p className="text-xs text-gray-500">
                                                     Unlocks: {new Date(lock.unlocksAt).toLocaleDateString()}
                                                 </p>
@@ -280,13 +271,7 @@ export default function WalletPage() {
                     </div>
                 </motion.div>
 
-                <LockFundsModal
-                    isOpen={showLockModal}
-                    onClose={() => setShowLockModal(false)}
-                    walletId={walletId}
-                    availableBalance={wallet.availableBalance || 0}
-                    onSuccess={fetchWallet}
-                />
+
 
                 <WithdrawModal
                     isOpen={showWithdrawModal}

@@ -26,6 +26,11 @@ export default function DepositPage() {
     const [loadingWallet, setLoadingWallet] = useState(true);
     const [showConfetti, setShowConfetti] = useState(false);
 
+    // Lock State
+    const [lockOption, setLockOption] = useState<'all' | 'partial'>('all');
+    const [lockDescription, setLockDescription] = useState('Medical Reserve');
+    const [lockAmount, setLockAmount] = useState(0);
+
     // Fetch current wallet balance
     useEffect(() => {
         const fetchWallet = async () => {
@@ -67,6 +72,13 @@ export default function DepositPage() {
         e.preventDefault();
         setIsLoading(true);
 
+        const finalLockAmount = lockOption === 'all' ? amount : lockAmount;
+        if (lockOption === 'partial' && (finalLockAmount < amount * 0.2 || finalLockAmount > amount)) {
+            showError(`Lock amount must be between ₦${(amount * 0.2).toLocaleString()} and ₦${amount.toLocaleString()}`);
+            setIsLoading(false);
+            return;
+        }
+
         try {
             const res = await fetch('/api/deposit', {
                 method: 'POST',
@@ -78,6 +90,11 @@ export default function DepositPage() {
                     expiry,
                     cvv,
                     schedule,
+                    lockSettings: {
+                        enabled: true,
+                        description: lockDescription,
+                        amount: finalLockAmount
+                    }
                 }),
             });
 
@@ -283,6 +300,77 @@ export default function DepositPage() {
                                         onChange={(e) => setCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
                                         required
                                     />
+                                </div>
+                            </div>
+
+                            {/* Lock Funds Section */}
+                            <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                                <div className="mb-4">
+                                    <h3 className="font-semibold text-neutral-dark">Lock Funds (Mandatory 20% Min)</h3>
+                                    <p className="text-xs text-gray-500">A minimum of 20% must be reserved for medical purposes</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-neutral-dark mb-2">
+                                            How much to lock?
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setLockOption('all');
+                                                    setLockAmount(amount);
+                                                }}
+                                                className={`p-3 rounded-xl border-2 text-left transition-all ${lockOption === 'all'
+                                                        ? 'border-primary bg-primary/5'
+                                                        : 'border-gray-200 hover:border-gray-300'
+                                                    }`}
+                                            >
+                                                <p className="text-sm font-semibold text-neutral-dark">Lock All</p>
+                                                <p className="text-xs text-gray-500">₦{amount.toLocaleString()}</p>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setLockOption('partial');
+                                                    setLockAmount(Math.max(lockAmount, amount * 0.2));
+                                                }}
+                                                className={`p-3 rounded-xl border-2 text-left transition-all ${lockOption === 'partial'
+                                                        ? 'border-primary bg-primary/5'
+                                                        : 'border-gray-200 hover:border-gray-300'
+                                                    }`}
+                                            >
+                                                <p className="text-sm font-semibold text-neutral-dark">Partial Amount</p>
+                                                <p className="text-xs text-gray-500">Choose how much</p>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {lockOption === 'partial' && (
+                                        <Input
+                                            label={`Amount to Lock (Min ₦${(amount * 0.2).toLocaleString()})`}
+                                            type="number"
+                                            value={lockAmount}
+                                            onChange={(e) => setLockAmount(Number(e.target.value))}
+                                            min={amount * 0.2}
+                                            max={amount}
+                                            required
+                                            className="bg-white"
+                                        />
+                                    )}
+
+                                    <Input
+                                        label="Description (What is this lock for?)"
+                                        placeholder="e.g. Healthcare fund"
+                                        value={lockDescription}
+                                        onChange={(e) => setLockDescription(e.target.value)}
+                                        required
+                                        className="bg-white"
+                                    />
+                                    <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                                        Locked funds can only be charged directly by pharmacies for medications.
+                                    </p>
                                 </div>
                             </div>
 

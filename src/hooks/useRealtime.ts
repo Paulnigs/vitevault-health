@@ -48,6 +48,13 @@ export function useRealtime({
     const [isConnected, setIsConnected] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
 
+    const callbacksRef = useRef({ onBalanceUpdate, onNotification, onRefillAlert, onConnect, onDisconnect });
+
+    // Update refs to latest callbacks so we don't need them in dependency arrays
+    useEffect(() => {
+        callbacksRef.current = { onBalanceUpdate, onNotification, onRefillAlert, onConnect, onDisconnect };
+    });
+
     const connect = useCallback(() => {
         if (!userId) return;
 
@@ -63,7 +70,7 @@ export function useRealtime({
             eventSource.onopen = () => {
                 setIsConnected(true);
                 setConnectionError(null);
-                onConnect?.();
+                callbacksRef.current.onConnect?.();
             };
 
             eventSource.onmessage = (event) => {
@@ -77,7 +84,7 @@ export function useRealtime({
                             break;
 
                         case 'balance:update':
-                            onBalanceUpdate?.({
+                            callbacksRef.current.onBalanceUpdate?.({
                                 walletId: data.walletId,
                                 newBalance: data.newBalance,
                                 type: data.type,
@@ -87,7 +94,7 @@ export function useRealtime({
                             break;
 
                         case 'notification':
-                            onNotification?.({
+                            callbacksRef.current.onNotification?.({
                                 id: data.id,
                                 type: data.type,
                                 title: data.title,
@@ -97,7 +104,7 @@ export function useRealtime({
                             break;
 
                         case 'refill:alert':
-                            onRefillAlert?.({
+                            callbacksRef.current.onRefillAlert?.({
                                 medicationId: data.medicationId,
                                 medicationName: data.medicationName,
                                 daysRemaining: data.daysRemaining,
@@ -116,7 +123,7 @@ export function useRealtime({
             eventSource.onerror = () => {
                 setIsConnected(false);
                 setConnectionError('Connection lost. Reconnecting...');
-                onDisconnect?.();
+                callbacksRef.current.onDisconnect?.();
 
                 // Auto-reconnect after 3 seconds
                 setTimeout(() => {
@@ -129,16 +136,16 @@ export function useRealtime({
             console.error('Failed to create EventSource:', error);
             setConnectionError('Failed to connect to realtime updates');
         }
-    }, [userId, onBalanceUpdate, onNotification, onRefillAlert, onConnect, onDisconnect]);
+    }, [userId]);
 
     const disconnect = useCallback(() => {
         if (eventSourceRef.current) {
             eventSourceRef.current.close();
             eventSourceRef.current = null;
             setIsConnected(false);
-            onDisconnect?.();
+            callbacksRef.current.onDisconnect?.();
         }
-    }, [onDisconnect]);
+    }, []);
 
     useEffect(() => {
         if (userId) {

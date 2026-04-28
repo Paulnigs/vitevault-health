@@ -9,7 +9,7 @@ import toast from 'react-hot-toast';
 
 interface LockedFund {
     id: string;
-    medicationName: string;
+    description?: string;
     amount: number;
     unlocksAt: string;
 }
@@ -39,14 +39,6 @@ export default function WalletPage() {
     const [parents, setParents] = useState<Parent[]>([]);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [selectedParent, setSelectedParent] = useState<string | null>(null);
-
-    // Lock Funds Modal state
-    const [showLockModal, setShowLockModal] = useState(false);
-    const [lockParentId, setLockParentId] = useState<string>('');
-    const [lockMedName, setLockMedName] = useState('');
-    const [lockAmount, setLockAmount] = useState('');
-    const [lockDuration, setLockDuration] = useState('30');
-    const [lockLoading, setLockLoading] = useState(false);
 
     useEffect(() => {
         if (status === 'unauthenticated') {
@@ -110,60 +102,6 @@ export default function WalletPage() {
         }
     };
 
-    // ── Lock Funds Handler ──
-    const handleLockFunds = async () => {
-        if (!lockMedName.trim()) {
-            toast.error('Please enter a medication name');
-            return;
-        }
-        const amt = Number(lockAmount);
-        if (!amt || amt <= 0) {
-            toast.error('Please enter a valid amount');
-            return;
-        }
-        const parent = parents.find(p => p.walletId === lockParentId);
-        if (!parent) {
-            toast.error('Please select a parent wallet');
-            return;
-        }
-        if (amt > (parent.availableBalance || 0)) {
-            toast.error(`Insufficient available balance. Max: ₦${(parent.availableBalance || 0).toLocaleString()}`);
-            return;
-        }
-
-        setLockLoading(true);
-        try {
-            const res = await fetch(`/api/wallet/${lockParentId}/lock`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'create',
-                    medicationName: lockMedName.trim(),
-                    amount: amt,
-                    durationDays: Number(lockDuration) || 30,
-                }),
-            });
-            const data = await res.json();
-            if (res.ok) {
-                toast.success(`₦${amt.toLocaleString()} locked for ${lockMedName}`, { icon: '🔒' });
-                setShowLockModal(false);
-                setLockMedName('');
-                setLockAmount('');
-                setLockDuration('30');
-                setLockParentId('');
-                await fetchWalletData();
-            } else {
-                toast.error(data.error || 'Failed to lock funds');
-            }
-        } catch {
-            toast.error('Network error');
-        } finally {
-            setLockLoading(false);
-        }
-    };
-
-
-
     if (loading || status === 'loading') {
         return (
             <div className="space-y-6">
@@ -202,20 +140,6 @@ export default function WalletPage() {
                         Your complete financial overview
                     </p>
                 </div>
-                {parentsWithWallet.length > 0 && (
-                    <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => {
-                            if (parentsWithWallet.length === 1) {
-                                setLockParentId(parentsWithWallet[0].walletId!);
-                            }
-                            setShowLockModal(true);
-                        }}
-                    >
-                        🔒 Lock Funds
-                    </Button>
-                )}
             </div>
 
             {/* Hero Balance Card */}
@@ -349,20 +273,6 @@ export default function WalletPage() {
                         <p className="text-sm text-[#6C757D] mb-4">
                             Lock funds to reserve money for specific medications.
                         </p>
-                        {parentsWithWallet.length > 0 && (
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => {
-                                    if (parentsWithWallet.length === 1) {
-                                        setLockParentId(parentsWithWallet[0].walletId!);
-                                    }
-                                    setShowLockModal(true);
-                                }}
-                            >
-                                Lock Funds Now
-                            </Button>
-                        )}
                     </Card>
                 ) : (
                     <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
@@ -388,7 +298,7 @@ export default function WalletPage() {
                                                         <span>💊</span>
                                                     </div>
                                                     <div>
-                                                        <p className="font-semibold text-[#343A40]">{lock.medicationName}</p>
+                                                        <p className="font-semibold text-[#343A40]">{lock.description || 'Medical Reserve'}</p>
                                                         <p className="text-xs text-[#6C757D]">
                                                             {lock.parentName}&apos;s wallet
                                                         </p>
@@ -472,216 +382,6 @@ export default function WalletPage() {
                     </div>
                 )}
             </motion.div>
-
-            {/* ══════════ LOCK FUNDS MODAL ══════════ */}
-            <Modal
-                isOpen={showLockModal}
-                onClose={() => {
-                    setShowLockModal(false);
-                    setLockMedName('');
-                    setLockAmount('');
-                    setLockDuration('30');
-                    setLockParentId('');
-                }}
-                title="🔒 Lock Funds for Medication"
-            >
-                <div className="space-y-4">
-                    <p className="text-sm text-[#6C757D]">
-                        Reserve money for a specific medication. You can also add funds to an existing lock.
-                    </p>
-
-                    {/* Parent selector (if multiple) */}
-                    {parentsWithWallet.length > 1 && (
-                        <div>
-                            <label className="block text-sm font-medium text-[#343A40] mb-1">
-                                Select Parent Wallet
-                            </label>
-                            <select
-                                value={lockParentId}
-                                onChange={(e) => setLockParentId(e.target.value)}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-[#343A40] bg-white"
-                            >
-                                <option value="">Choose a wallet...</option>
-                                {parentsWithWallet.map(p => (
-                                    <option key={p.walletId} value={p.walletId!}>
-                                        {p.name} — Available: ₦{(p.availableBalance || 0).toLocaleString()}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
-                    {/* Available balance indicator */}
-                    {lockParentId && (
-                        <div className="p-3 bg-blue-50 rounded-lg text-blue-800 text-sm font-medium">
-                            Available to Lock: ₦{(parents.find(p => p.walletId === lockParentId)?.availableBalance || 0).toLocaleString()}
-                        </div>
-                    )}
-
-                    {/* Existing medications quick-select */}
-                    {(() => {
-                        const selectedParentLocks = lockParentId
-                            ? (parents.find(p => p.walletId === lockParentId)?.lockedFunds || [])
-                            : allLockedFunds;
-                        const uniqueMeds = Array.from(new Set(selectedParentLocks.map(l => l.medicationName)));
-
-                        if (uniqueMeds.length > 0) {
-                            return (
-                                <div>
-                                    <label className="block text-sm font-medium text-[#343A40] mb-2">
-                                        Add to existing or create new
-                                    </label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {uniqueMeds.map(med => {
-                                            const isSelected = lockMedName === med;
-                                            const lockedAmt = selectedParentLocks
-                                                .filter(l => l.medicationName === med)
-                                                .reduce((s, l) => s + l.amount, 0);
-                                            return (
-                                                <button
-                                                    key={med}
-                                                    type="button"
-                                                    onClick={() => setLockMedName(med)}
-                                                    className={`
-                                                        px-3 py-2 rounded-lg text-sm font-medium transition-all border
-                                                        ${isSelected
-                                                            ? 'bg-amber-100 border-amber-400 text-amber-800 ring-2 ring-amber-300'
-                                                            : 'bg-gray-50 border-gray-200 text-[#343A40] hover:bg-gray-100'
-                                                        }
-                                                    `}
-                                                >
-                                                    <span className="flex items-center gap-1.5">
-                                                        💊 {med}
-                                                        <span className={`text-xs ${isSelected ? 'text-amber-600' : 'text-[#6C757D]'}`}>
-                                                            (₦{lockedAmt.toLocaleString()})
-                                                        </span>
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                        <button
-                                            type="button"
-                                            onClick={() => setLockMedName('')}
-                                            className={`
-                                                px-3 py-2 rounded-lg text-sm font-medium transition-all border
-                                                ${lockMedName === '' || !uniqueMeds.includes(lockMedName)
-                                                    ? 'bg-blue-50 border-blue-400 text-blue-800 ring-2 ring-blue-300'
-                                                    : 'bg-gray-50 border-gray-200 text-[#343A40] hover:bg-gray-100'
-                                                }
-                                            `}
-                                        >
-                                            ➕ New Medication
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        }
-                        return null;
-                    })()}
-
-                    {/* Medication name — show input if "New" is selected or no existing meds */}
-                    {(() => {
-                        const selectedParentLocks = lockParentId
-                            ? (parents.find(p => p.walletId === lockParentId)?.lockedFunds || [])
-                            : allLockedFunds;
-                        const uniqueMeds = Array.from(new Set(selectedParentLocks.map(l => l.medicationName)));
-                        const isExisting = uniqueMeds.includes(lockMedName);
-
-                        if (isExisting) {
-                            // Show selected med info
-                            const lockedAmt = selectedParentLocks
-                                .filter(l => l.medicationName === lockMedName)
-                                .reduce((s, l) => s + l.amount, 0);
-                            return (
-                                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">💊</div>
-                                    <div>
-                                        <p className="font-semibold text-[#343A40] text-sm">{lockMedName}</p>
-                                        <p className="text-xs text-amber-700">
-                                            Currently locked: ₦{lockedAmt.toLocaleString()} · Adding more funds
-                                        </p>
-                                    </div>
-                                </div>
-                            );
-                        }
-
-                        return (
-                            <Input
-                                label={uniqueMeds.length > 0 ? "New Medication Name" : "Medication Name"}
-                                placeholder="e.g. Insulin, Paracetamol"
-                                value={lockMedName}
-                                onChange={(e) => setLockMedName(e.target.value)}
-                                required
-                            />
-                        );
-                    })()}
-
-                    {(() => {
-                        const selectedParentLocks2 = lockParentId
-                            ? (parents.find(p => p.walletId === lockParentId)?.lockedFunds || [])
-                            : allLockedFunds;
-                        const uniqueMeds2 = Array.from(new Set(selectedParentLocks2.map(l => l.medicationName)));
-                        const isExistingMed = uniqueMeds2.includes(lockMedName);
-
-                        return (
-                            <div className={isExistingMed ? '' : 'grid grid-cols-2 gap-4'}>
-                                <Input
-                                    label="Amount (₦)"
-                                    type="number"
-                                    placeholder="0.00"
-                                    value={lockAmount}
-                                    onChange={(e) => setLockAmount(e.target.value)}
-                                    required
-                                />
-                                {!isExistingMed && (
-                                    <Input
-                                        label="Duration (Days)"
-                                        type="number"
-                                        value={lockDuration}
-                                        onChange={(e) => setLockDuration(e.target.value)}
-                                        min={1}
-                                        required
-                                    />
-                                )}
-                                {isExistingMed && (
-                                    <p className="text-xs text-[#6C757D] mt-1">
-                                        Duration uses the existing lock&apos;s schedule — no need to set again.
-                                    </p>
-                                )}
-                            </div>
-                        );
-                    })()}
-
-
-
-                    <Button
-                        variant="primary"
-                        size="lg"
-                        className="w-full"
-                        isLoading={lockLoading}
-                        disabled={lockLoading || !lockMedName || !lockAmount || !lockParentId}
-                        onClick={handleLockFunds}
-                    >
-                        {(() => {
-                            const selectedParentLocks = lockParentId
-                                ? (parents.find(p => p.walletId === lockParentId)?.lockedFunds || [])
-                                : allLockedFunds;
-                            const uniqueMeds = Array.from(new Set(selectedParentLocks.map(l => l.medicationName)));
-                            const isExisting = uniqueMeds.includes(lockMedName);
-                            const amt = Number(lockAmount);
-
-                            if (isExisting && amt > 0) {
-                                return `Add ₦${amt.toLocaleString()} to ${lockMedName}`;
-                            }
-                            if (amt > 0) {
-                                return `Lock ₦${amt.toLocaleString()}`;
-                            }
-                            return 'Lock Funds';
-                        })()}
-                    </Button>
-                </div>
-            </Modal>
-
 
         </div>
     );

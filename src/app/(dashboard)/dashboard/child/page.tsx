@@ -62,10 +62,6 @@ export default function ChildDashboard() {
     const [selectedParent, setSelectedParent] = useState<Parent | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
-    const [isLockModalOpen, setIsLockModalOpen] = useState(false);
-    const [lockParentId, setLockParentId] = useState<string>('');
-    const [lockAmount, setLockAmount] = useState('');
-    const [lockLoading, setLockLoading] = useState(false);
 
     // ── Deposit multi-step state ──
     const [depositStep, setDepositStep] = useState<DepositStep>('amount');
@@ -77,7 +73,6 @@ export default function ChildDashboard() {
     });
 
     // Lock settings inside deposit flow
-    const [isLockEnabled, setIsLockEnabled] = useState(false);
     const [lockOption, setLockOption] = useState<'all' | 'partial'>('all');
     const [depositLockAmount, setDepositLockAmount] = useState('');
 
@@ -118,7 +113,6 @@ export default function ChildDashboard() {
         setSelectedParent(parent);
         setDepositStep('amount');
         setDepositForm({ amount: '', cardNumber: '', expiry: '', cvv: '' });
-        setIsLockEnabled(false);
         setLockOption('all');
         setDepositLockAmount('');
         setIsDepositModalOpen(true);
@@ -137,9 +131,7 @@ export default function ChildDashboard() {
 
         setIsLoading(true);
 
-        const lockAmt = isLockEnabled
-            ? (lockOption === 'all' ? parseInt(depositForm.amount) : parseInt(depositLockAmount) || 0)
-            : 0;
+        const lockAmt = lockOption === 'all' ? parseInt(depositForm.amount) : parseInt(depositLockAmount) || 0;
 
         try {
             const response = await fetch('/api/deposit', {
@@ -155,8 +147,9 @@ export default function ChildDashboard() {
                     },
                     schedule: 'one-time',
                     lockSettings: {
-                        enabled: isLockEnabled,
-                        amount: lockAmt
+                        enabled: true,
+                        amount: lockAmt,
+                        description: 'Medical Reserve'
                     }
                 }),
             });
@@ -170,7 +163,6 @@ export default function ChildDashboard() {
             toast.success(`₦${parseInt(depositForm.amount).toLocaleString()} deposited to ${selectedParent.name}'s wallet! 🎉`);
             setIsDepositModalOpen(false);
             setDepositForm({ amount: '', cardNumber: '', expiry: '', cvv: '' });
-            setIsLockEnabled(false);
 
             fetchDashboardData();
         } catch (error) {
@@ -181,49 +173,7 @@ export default function ChildDashboard() {
         }
     };
 
-    // ── Lock Funds from Dashboard ──
-    const handleLockFunds = async () => {
-        const amt = Number(lockAmount);
-        if (!amt || amt <= 0) {
-            toast.error('Please enter a valid amount');
-            return;
-        }
-        const parent = parents.find(p => p.walletId === lockParentId);
-        if (!parent) {
-            toast.error('Please select a parent wallet');
-            return;
-        }
-        if (amt > (parent.availableBalance || 0)) {
-            toast.error(`Insufficient available balance. Max: ₦${(parent.availableBalance || 0).toLocaleString()}`);
-            return;
-        }
 
-        setLockLoading(true);
-        try {
-            const res = await fetch(`/api/wallet/${lockParentId}/lock`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'create',
-                    amount: amt
-                }),
-            });
-            const data = await res.json();
-            if (res.ok) {
-                toast.success(`₦${amt.toLocaleString()} added to locked funds`, { icon: '🔒' });
-                setIsLockModalOpen(false);
-                setLockAmount('');
-                setLockParentId('');
-                await fetchDashboardData();
-            } else {
-                toast.error(data.error || 'Failed to lock funds');
-            }
-        } catch {
-            toast.error('Network error');
-        } finally {
-            setLockLoading(false);
-        }
-    };
 
     if (loading || status === 'loading') {
         return (
@@ -262,8 +212,7 @@ export default function ChildDashboard() {
             case 'payment':
                 return !!depositForm.cardNumber && !!depositForm.expiry && !!depositForm.cvv;
             case 'lock':
-                if (!isLockEnabled) return true;
-                if (lockOption === 'partial' && (!depositLockAmount || parseInt(depositLockAmount) <= 0 || parseInt(depositLockAmount) > parseInt(depositForm.amount))) return false;
+                if (lockOption === 'partial' && (!depositLockAmount || parseInt(depositLockAmount) < parseInt(depositForm.amount) * 0.2 || parseInt(depositLockAmount) > parseInt(depositForm.amount))) return false;
                 return true;
             case 'review':
                 return true;
@@ -336,22 +285,7 @@ export default function ChildDashboard() {
                         </div>
                     </Link>
                 </div>
-                {/* Lock Funds Button on Dashboard */}
-                {parentsWithWallet.length > 0 && (
-                    <div className="flex justify-start mt-4">
-                        <button
-                            onClick={() => {
-                                if (parentsWithWallet.length === 1) {
-                                    setLockParentId(parentsWithWallet[0].walletId!);
-                                }
-                                setIsLockModalOpen(true);
-                            }}
-                            className="px-6 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white font-medium rounded-xl transition-all flex items-center justify-center gap-2 text-sm border border-white/20"
-                        >
-                            🔒 Lock Funds
-                        </button>
-                    </div>
-                )}
+
             </div>
 
             {/* Quick Stats */}
@@ -476,79 +410,7 @@ export default function ChildDashboard() {
                 )}
             </div>
 
-            {/* ══════════ LOCK FUNDS MODAL (Dashboard — Add to Existing Medication) ══════════ */}
-            <Modal
-                isOpen={isLockModalOpen}
-                onClose={() => {
-                    setIsLockModalOpen(false);
-                    setLockAmount('');
-                    setLockParentId('');
-                }}
-                title="🔒 Lock Funds"
-            >
-                <div className="space-y-4">
-                    <p className="text-sm text-[#6C757D]">
-                        Lock funds securely to ensure they are available for medical usage.
-                    </p>
 
-                    {/* Parent selector (if multiple) */}
-                    {parentsWithWallet.length > 1 && (
-                        <div>
-                            <label className="block text-sm font-medium text-[#343A40] mb-1">
-                                Select Parent Wallet
-                            </label>
-                            <select
-                                value={lockParentId}
-                                onChange={(e) => setLockParentId(e.target.value)}
-                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-[#343A40] bg-white"
-                            >
-                                <option value="">Choose a wallet...</option>
-                                {parentsWithWallet.map(p => (
-                                    <option key={p.walletId} value={p.walletId!}>
-                                        {p.name} — Available: ₦{(p.availableBalance || 0).toLocaleString()}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
-                    {/* Available balance indicator */}
-                    {lockParentId && (
-                        <div className="p-3 bg-blue-50 rounded-lg text-blue-800 text-sm font-medium">
-                            Available to Lock: ₦{(parents.find(p => p.walletId === lockParentId)?.availableBalance || 0).toLocaleString()}
-                        </div>
-                    )}
-
-                    {/* Amount */}
-                    <Input
-                        label="Amount to Lock (₦)"
-                        type="number"
-                        placeholder="0.00"
-                        value={lockAmount}
-                        onChange={(e) => setLockAmount(e.target.value)}
-                        required
-                    />
-
-                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                        <p className="text-xs text-blue-800">
-                            Locked funds can only be charged by pharmacies for medications.
-                        </p>
-                    </div>
-
-                    <Button
-                        variant="primary"
-                        size="lg"
-                        className="w-full"
-                        isLoading={lockLoading}
-                        disabled={lockLoading || !lockAmount || !lockParentId}
-                        onClick={handleLockFunds}
-                    >
-                        {lockAmount && Number(lockAmount) > 0
-                            ? `Lock ₦${Number(lockAmount).toLocaleString()}`
-                            : 'Lock Funds'}
-                    </Button>
-                </div>
-            </Modal>
 
             {/* ══════════ DEPOSIT MODAL (Multi-Stage) ══════════ */}
             <Modal

@@ -33,19 +33,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             const unlockDate = new Date();
             unlockDate.setFullYear(unlockDate.getFullYear() + 10);
 
-            const newLock = {
-                _id: generateId(),
-                amount,
-                lockedAt: new Date().toISOString(),
-                unlocksAt: unlockDate.toISOString(),
-                isActive: true,
-                description: description || 'Medical Reserve',
-            };
+            const existingLock = wallet.lockedFunds.find(f => f.isActive);
+            let finalLock;
 
-            wallet.lockedFunds.push(newLock);
+            if (existingLock) {
+                existingLock.amount += amount;
+                existingLock.description = description || existingLock.description || 'Medical Reserve';
+                finalLock = existingLock;
+            } else {
+                const newLock = {
+                    _id: generateId(),
+                    amount,
+                    lockedAt: new Date().toISOString(),
+                    unlocksAt: unlockDate.toISOString(),
+                    isActive: true,
+                    description: description || 'Medical Reserve',
+                };
+                wallet.lockedFunds.push(newLock);
+                finalLock = newLock;
+            }
+
             Wallets.save(wallet);
 
-            return NextResponse.json({ message: 'Funds locked successfully', lock: newLock });
+            return NextResponse.json({ message: 'Funds locked successfully', lock: finalLock });
         }
 
 
